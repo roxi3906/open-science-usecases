@@ -1,0 +1,128 @@
+[
+  {
+    "case": "Can a Simple Algorithm Beat AI at Wordle",
+    "source_name": "Can a Simple Algorithm Beat AI at Wordle.png",
+    "bytes": 2366230,
+    "sha256": "cf90cb228dcc7c623c507f471820e14104a8abe85751f80a60a326c9d444d24e",
+    "location": "Can a Simple Algorithm Beat AI at Wordle/Can a Simple Algorithm Beat AI at Wordle.png"
+  },
+  {
+    "case": "Can a Simple Algorithm Beat AI at Wordle",
+    "source_name": "Can a Simple Algorithm Beat AI at Wordle.science",
+    "bytes": 671109,
+    "sha256": "6e816f1f92cbe4feeed9e3217c6f1bd0d9c046fd4ba653017b9812391f421610",
+    "location": "Can a Simple Algorithm Beat AI at Wordle/Can a Simple Algorithm Beat AI at Wordle.science"
+  },
+  {
+    "case": "Can AI Spot the Errors in a Spreadsheet",
+    "source_name": "Can AI Spot the Errors in a Spreadsheet.png",
+    "bytes": 2421132,
+    "sha256": "cea1621908154862edf6e9107608695d5903290499bd95af2a34be64ddbbcdf4",
+    "location": "Can AI Spot the Errors in a Spreadsheet/Can AI Spot the Errors in a Spreadsheet.png"
+  },
+  {
+    "case": "Can AI Spot the Errors in a Spreadsheet",
+    "source_name": "Can AI Spot the Errors in a Spreadsheet.science",
+    "bytes": 188578,
+    "sha256": "417d9fd020faea44c71221d631fc9dc7fd0c8ee9c41eeb084aaa8ad8a18f119d",
+    "location": "Can AI Spot the Errors in a Spreadsheet/Can AI Spot the Errors in a Spreadsheet.science"
+  },
+  {
+    "case": "Can GLP-1 Drugs Really Help Us Live Longer",
+    "source_name": "Can GLP-1 Drugs Really Help Us Live Longer.png",
+    "bytes": 2493772,
+    "sha256": "c9cd168b371f6cc2e3eac6d92e71555112c303939747099f162feadc10111ce7",
+    "location": "Can GLP-1 Drugs Really Help Us Live Longer/Can GLP-1 Drugs Really Help Us Live Longer.png"
+  },
+  {
+    "case": "Can GLP-1 Drugs Really Help Us Live Longer",
+    "source_name": "Can GLP-1 Drugs Really Help Us Live Longer.science",
+    "bytes": 89251,
+    "sha256": "be052cbfd3b1ead7938171671929433404c73bea9b9bcb3e231efe6db6aa1f8b",
+    "location": "Can GLP-1 Drugs Really Help Us Live Longer/Can GLP-1 Drugs Really Help Us Live Longer.science"
+  },
+  {
+    "case": "First Flight vs. Evening Flight - Which Is More Reliable",
+    "source_name": "First Flight vs. Evening Flight - Which Is More Reliable.png",
+    "bytes": 2193306,
+    "sha256": "06b9dcf617f2aec5ae5a9a1158e603e4e773094d386ef0420dec75415e548bc2",
+    "location": "First Flight vs. Evening Flight - Which Is More Reliable/First Flight vs. Evening Flight - Which Is More Reliable.png"
+  },
+  {
+    "case": "First Flight vs. Evening Flight - Which Is More Reliable",
+    "source_name": "First Flight vs. Evening Flight - Which Is More Reliable.science",
+    "bytes": 681599670,
+    "sha256": "b369898d150c4b5199f7b6f0014b2d2673e3d1c9dcdbc914745554341a51ddf1",
+    "location": "https://github.com/aipoch/open-science-usecases/releases/download/completed-cases-2026-09-23/first-flight-vs-evening-flight.science"
+  },
+  {
+    "case": "Hotter Years, Hotter Days",
+    "source_name": "Hotter Years, Hotter Days.png",
+    "bytes": 2454280,
+    "sha256": "01bd0c1a1dd668381e4624c9184fed882efbb039dd0128cc63e7de6c91ca5679",
+    "location": "Hotter Years, Hotter Days/Hotter Years, Hotter Days.png"
+  },
+  {
+    "case": "Hotter Years, Hotter Days",
+    "source_name": "Hotter Years, Hotter Days.science",
+    "bytes": 52025701,
+    "sha256": "34936fe69b5100365a4dbee4bb902e82c166675e073b07439112bd252f337389",
+    "location": "Hotter Years, Hotter Days/Hotter Years, Hotter Days.science"
+  },
+  {
+    "case": "How Many Homes Could AI Data Centers Power",
+    "source_name": "How Many Homes Could AI Data Centers Power.png",
+    "bytes": 2639183,
+    "sha256": "e419b8e5584e8d508a1e7cdaa7869b4e1d8f96e28c36c1bafdfa4445999fb005",
+    "location": "How Many Homes Could AI Data Centers Power/How Many Homes Could AI Data Centers Power.png"
+  },
+  {
+    "case": "How Many Homes Could AI Data Centers Power",
+    "source_name": "How Many Homes Could AI Data Centers Power.science",
+    "bytes": 5142441,
+    "sha256": "3fd660652a0f25a417a37e32fa011b2ec2a250031c3133e08467d7f23eb69e91",
+    "location": "How Many Homes Could AI Data Centers Power/How Many Homes Could AI Data Centers Power.science"
+  },
+  {
+    "case": "Our Nearest Exoplanet - How Long Is the Trip",
+    "source_name": "Our Nearest Exoplanet - How Long Is the Trip.png",
+    "bytes": 2571257,
+    "sha256": "b460a8c14e7f4b5e154db1d60062f0822b00f314859e68ac0f34fc6bdf6d6c65",
+    "location": "Our Nearest Exoplanet - How Long Is the Trip/Our Nearest Exoplanet - How Long Is the Trip.png"
+  },
+  {
+    "case": "Our Nearest Exoplanet - How Long Is the Trip",
+    "source_name": "Our Nearest Exoplanet - How Long Is the Trip.science",
+    "bytes": 3254700,
+    "sha256": "05d7f12b19999e70fe04d3819788b15b428aebeed54f06d8474f80384ec47d5a",
+    "location": "Our Nearest Exoplanet - How Long Is the Trip/Our Nearest Exoplanet - How Long Is the Trip.science"
+  },
+  {
+    "case": "Which Planet Is Most Like Earth—and Who Decides",
+    "source_name": "Which Planet Is Most Like Earth—and Who Decides.png",
+    "bytes": 2556612,
+    "sha256": "b9705598cb95da7626d35a9a4c86f822eff5b863628ede38eb544e5e7388867a",
+    "location": "Which Planet Is Most Like Earth—and Who Decides/Which Planet Is Most Like Earth—and Who Decides.png"
+  },
+  {
+    "case": "Which Planet Is Most Like Earth—and Who Decides",
+    "source_name": "Which Planet Is Most Like Earth—and Who Decides.science",
+    "bytes": 12658199,
+    "sha256": "784d666fe41c780bb691eb7e01ff995028e051ce4f955dd056ce7572dc58b1b7",
+    "location": "Which Planet Is Most Like Earth—and Who Decides/Which Planet Is Most Like Earth—and Who Decides.science"
+  },
+  {
+    "case": "Why Do Coffee and Sleep Studies Disagree",
+    "source_name": "Why Do Coffee and Sleep Studies Disagree.png",
+    "bytes": 2477457,
+    "sha256": "f64a756e17c37c2194cb8766fae32fd997fee3d7ecc287aac95e4d657776106f",
+    "location": "Why Do Coffee and Sleep Studies Disagree/Why Do Coffee and Sleep Studies Disagree.png"
+  },
+  {
+    "case": "Why Do Coffee and Sleep Studies Disagree",
+    "source_name": "Why Do Coffee and Sleep Studies Disagree.science",
+    "bytes": 121972,
+    "sha256": "e87a4937bdfb7e1d6ed8b2a48d7ae3012e010e98b829b807026d413cb1e9fa21",
+    "location": "Why Do Coffee and Sleep Studies Disagree/Why Do Coffee and Sleep Studies Disagree.science"
+  }
+]
