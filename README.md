@@ -18,4 +18,9 @@ Download a `.science` file to open in Open-Science.
 
 The flight reliability case is available from [Releases](https://github.com/aipoch/open-science-usecases/releases/tag/completed-cases-2026-09-23). The other eight case files are stored in their folders.
 
-File sizes and SHA-256 checksums are listed in [manifest.json](manifest.json).
+The [manifest.json](manifest.json) file groups each case into one object with a
+URL-safe `name`, plus nested `cover`, `case`, and (when available)
+`introduction` resources. Each resource records its filename, byte size,
+SHA-256 checksum, and relative path. The `.science` resource also has a
+`release_url`, which is empty when the case is stored in this repository. The
+root README and per-case README files are not included as introductions.
