@@ -19,19 +19,28 @@ class PublishTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.calls = self.root / "uploads.jsonl"
+        self.objects = self.root / "s3"
         bin_dir = self.root / "bin"
         bin_dir.mkdir()
         aws = bin_dir / "aws"
         aws.write_text(
             "#!" + sys.executable + "\n"
             "import json, os, sys\n"
+            "from pathlib import Path\n"
             "with open(os.environ['UPLOAD_LOG'], 'a') as f:\n"
             "    f.write(json.dumps(sys.argv[1:]) + '\\n')\n"
-            "sys.exit(int(os.environ.get('UPLOAD_EXIT', '0')))\n"
+            "if os.environ.get('UPLOAD_EXIT', '0') != '0':\n"
+            "    sys.exit(int(os.environ['UPLOAD_EXIT']))\n"
+            "assert sys.argv[1:3] == ['s3', 'cp']\n"
+            "assert sys.argv[4].startswith('s3://')\n"
+            "target = Path(os.environ['S3_ROOT']) / sys.argv[4][5:]\n"
+            "target.parent.mkdir(parents=True, exist_ok=True)\n"
+            "target.write_bytes(Path(sys.argv[3]).read_bytes())\n"
         )
         aws.chmod(0o755)
         self.env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'],
-                        UPLOAD_LOG=str(self.calls), AWS_TARGET_FOLDER="s3://test-bucket/cases/")
+                        UPLOAD_LOG=str(self.calls), S3_ROOT=str(self.objects),
+                        AWS_TARGET_FOLDER="s3://test-bucket/cases/")
         self.case = {"name": "a-test-case", "title": "A Test Case"}
         for key, suffix in [("cover", "png"), ("case", "science"), ("introduction", "md")]:
             name = "A Test—Case." + suffix
@@ -92,6 +101,7 @@ class PublishTests(unittest.TestCase):
             "s3://test-bucket/cases/a-test-case/A Test—Case.png",
             "s3://test-bucket/cases/a-test-case/A Test—Case.science",
             "s3://test-bucket/cases/a-test-case/A Test—Case.md",
+            "s3://test-bucket/cases/manifest.json",
         })
         for call in self.uploads():
             self.assertEqual(call[:2], ["s3", "cp"])
@@ -103,7 +113,7 @@ class PublishTests(unittest.TestCase):
         result = self.run_publish()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.requests, [("HEAD", "/redirect"), ("HEAD", "/asset")])
-        self.assertEqual(len(self.uploads()), 2)
+        self.assertEqual(len(self.uploads()), 3)
         self.assertFalse(any(call[3].endswith(".science") for call in self.uploads()))
         self.assertIn("681599670", result.stdout)
         self.assertIn("remote-tag", result.stdout)
@@ -113,7 +123,7 @@ class PublishTests(unittest.TestCase):
         result = self.run_publish()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.requests, [])
-        self.assertEqual(len(self.uploads()), 3)
+        self.assertEqual(len(self.uploads()), 4)
         self.assertIn("s3://test-bucket/cases/a-test-case/A Test—Case.science",
                       [call[3] for call in self.uploads()])
 
@@ -133,7 +143,7 @@ class PublishTests(unittest.TestCase):
         result = self.run_publish()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.requests, [("HEAD", "/redirect"), ("HEAD", "/asset")])
-        self.assertEqual(len(self.uploads()), 2)
+        self.assertEqual(len(self.uploads()), 3)
         metadata = json.loads(result.stdout.split("\n")[0])
         self.assertEqual(metadata["headers"]["etag"], '"caf\xe9\x85"')
 
@@ -143,7 +153,7 @@ class PublishTests(unittest.TestCase):
         result = self.run_publish()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.requests, [("HEAD", "/redirect"), ("HEAD", "/asset")])
-        self.assertEqual(len(self.uploads()), 2)
+        self.assertEqual(len(self.uploads()), 3)
         self.assertIn("HEAD unavailable", result.stdout)
         self.assertIn(self.case["case"]["sha256"], result.stdout)
 
@@ -151,7 +161,42 @@ class PublishTests(unittest.TestCase):
         del self.case["introduction"]
         result = self.run_publish()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(self.uploads()), 2)
+        self.assertEqual(len(self.uploads()), 3)
+
+    def test_manifest_is_uploaded_to_target_root_after_all_resources(self):
+        result = self.run_publish()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.uploads()[-1][3], "s3://test-bucket/cases/manifest.json")
+        self.assertEqual((self.objects / "test-bucket/cases/manifest.json").read_bytes(),
+                         (self.root / "manifest.json").read_bytes())
+
+    def test_republish_replaces_same_size_file_and_manifest_with_latest_bytes(self):
+        result = self.run_publish()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.objects / "test-bucket/cases/manifest.json").is_file())
+        path = self.root / self.case["introduction"]["path"]
+        previous = path.stat()
+        content = b"x" * previous.st_size
+        path.write_bytes(content)
+        os.utime(path, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+        self.case["introduction"]["sha256"] = hashlib.sha256(content).hexdigest()
+        result = self.run_publish()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.objects / "test-bucket/cases/a-test-case/A Test—Case.md").read_bytes(), content)
+        self.assertEqual((self.objects / "test-bucket/cases/manifest.json").read_bytes(),
+                         (self.root / "manifest.json").read_bytes())
+
+    def test_failed_republish_leaves_previous_manifest_in_place(self):
+        result = self.run_publish()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        remote_manifest = self.objects / "test-bucket/cases/manifest.json"
+        self.assertTrue(remote_manifest.is_file())
+        previous = remote_manifest.read_bytes()
+        self.case["title"] = "Updated title"
+        self.env["UPLOAD_EXIT"] = "1"
+        result = self.run_publish()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(remote_manifest.read_bytes(), previous)
 
     def test_invalid_local_resource_blocks_all_uploads(self):
         (self.root / self.case["introduction"]["path"]).write_bytes(b"corrupt")

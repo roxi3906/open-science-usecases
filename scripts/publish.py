@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish local manifest resources to S3; inspect remote resources with HEAD only."""
+"""Publish local resources and manifest to S3; inspect remote resources with HEAD only."""
 
 import argparse
 import hashlib
@@ -50,6 +50,8 @@ def publication_plan(root, target):
             if digest.hexdigest() != resource["sha256"]:
                 raise ValueError("SHA-256 mismatch: " + str(relative))
             uploads.append((path, target + "/" + name + "/" + filename))
+    # Publish the index only after every resource upload has succeeded.
+    uploads.append((root / "manifest.json", target + "/manifest.json"))
     return uploads, remote
 
 
@@ -95,8 +97,9 @@ def main():
         if args.dry_run:
             print("Would upload: " + destination)
         else:
+            # Copy every file on every run, including same-size content changes.
             subprocess.run(["aws", "s3", "cp", str(path), destination, "--only-show-errors"], check=True)
-    print("{} {} local resources; skipped {} remote resources.".format(
+    print("{} {} local files; skipped {} remote resources.".format(
         "Validated" if args.dry_run else "Uploaded", len(uploads), len(remote)))
 
 
