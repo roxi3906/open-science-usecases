@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Validate newly added case directories and their manifest entries."""
+"""Validate only cases affected by path changes or manifest edits."""
 
 import argparse
+from collections import Counter
 import hashlib
 from ipaddress import IPv6Address
 import json
@@ -81,35 +82,123 @@ def is_science_url(url):
         return False
 
 
-def directories(base, merge_base=False, new_branch_base=None):
+def resolve_base(base, merge_base=False, new_branch_base=None):
     if re.fullmatch(r"0{40}|0{64}", base) and new_branch_base:
         base, merge_base = new_branch_base, True
     if re.fullmatch(r"0{40}|0{64}", base):
         # The initial push of the default branch has no previous tree.
-        previous = set()
         log("This is the first push of the default branch. Checking all case directories.")
-    else:
-        base = git("rev-parse", "--verify", base + "^{commit}").strip()
-        if merge_base:
-            base = git("merge-base", base, "HEAD").strip()
-        log(f"Comparing HEAD with {base} to find new top-level case directories.")
-        previous = set(git("ls-tree", "-d", "--name-only", "-z", base).split("\0"))
-    current = set(git("ls-tree", "-d", "--name-only", "-z", "HEAD").split("\0"))
-    cases, errors = [], []
-    for directory in sorted(current - previous):
-        if not directory or directory.startswith("."):
-            continue
+        return None
+    base = git("rev-parse", "--verify", base + "^{commit}").strip()
+    if merge_base:
+        base = git("merge-base", base, "HEAD").strip()
+    log(f"Comparing HEAD with {base} to find relevant case changes.")
+    return base
+
+
+def case_folders(paths):
+    return {path.split("/", 1)[0] for path in paths if "/" in path and not path.startswith(".")}
+
+
+def entry_folders(entry, known):
+    matches = {directory for directory in known if kebab_case(directory) == entry.get("name")}
+    if len(matches) == 1:
+        return matches
+    title = entry.get("title")
+    if isinstance(title, str) and title in known:
+        return {title}
+    # Paths help locate a case even when its manifest name/title was misspelled.
+    for key in ("cover", "case", "introduction"):
+        resource = entry.get(key)
+        path = resource.get("path") if isinstance(resource, dict) else None
+        if isinstance(path, str) and path.split("/", 1)[0] in known:
+            matches.add(path.split("/", 1)[0])
+    return matches
+
+
+def manifest_entries(text, source):
+    entries = read_json(text, source)
+    if not isinstance(entries, list) or any(not isinstance(entry, dict) for entry in entries):
+        raise ValueError(f"{source} must contain a JSON array of case objects, such as [{{\"title\": ...}}]. "
+                         "Put the entries inside square brackets and make each entry an object.")
+    return entries
+
+
+def directories(base, merge_base=False, new_branch_base=None):
+    base = resolve_base(base, merge_base, new_branch_base)
+    previous_paths = set(git("ls-tree", "-r", "--name-only", "-z", base).split("\0")) if base else set()
+    current_paths = set(git("ls-tree", "-r", "--name-only", "-z", "HEAD").split("\0"))
+    previous, current = case_folders(previous_paths), case_folders(current_paths)
+    # Compare path sets rather than file contents: additions, removals and renames
+    # affect structure; editing a file in place does not.
+    structural = case_folders(previous_paths ^ current_paths)
+    changed_paths = set(git("diff", "--name-only", "-z", base, "HEAD").split("\0")) if base else current_paths
+    manifest_changed = "manifest.json" in changed_paths
+    log(f"Cases with path changes: {len(structural)}. manifest.json changed: {manifest_changed}.")
+    if not structural and not manifest_changed:
+        return [], []
+
+    manifest = manifest_entries(Path("manifest.json").read_text(encoding="utf-8"), "manifest.json")
+    selected = structural & current
+    errors = []
+    known = previous | current
+    if manifest_changed:
+        old_manifest = []
+        if base and "manifest.json" in previous_paths:
+            try:
+                old_manifest = manifest_entries(git("show", f"{base}:manifest.json"), "baseline manifest.json")
+            except ValueError:
+                log("The baseline manifest could not be parsed. Rechecking all current entries so it can be repaired.")
+        # Canonical JSON ignores formatting/key order, but distinguishes 1 from true.
+        old_counts = Counter(json.dumps(entry, sort_keys=True) for entry in old_manifest)
+        new_counts = Counter(json.dumps(entry, sort_keys=True) for entry in manifest)
+        for entries, other_counts, own_counts, is_current in (
+            (old_manifest, new_counts, old_counts, False),
+            (manifest, old_counts, new_counts, True),
+        ):
+            for entry in entries:
+                fingerprint = json.dumps(entry, sort_keys=True)
+                if own_counts[fingerprint] == other_counts[fingerprint]:
+                    continue
+                matches = entry_folders(entry, known)
+                selected.update(matches & current)
+                if is_current and not matches:
+                    errors.append(f"manifest.json: changed entry {show(entry.get('name'))} has no matching case directory. "
+                                  "Correct its name, title, and resource paths, or add the case directory.")
+                elif is_current:
+                    # A bad alias must not be replaced by an unchanged good entry
+                    # when the manifest stage looks up the directory's canonical name.
+                    for directory in matches:
+                        expected_name = kebab_case(directory)
+                        if entry.get("name") != expected_name:
+                            errors.append(f"manifest.json: changed entry has name {show(entry.get('name'))}, "
+                                          f"but its case directory {show(directory)} requires {show(expected_name)}. "
+                                          "Correct this entry's name and keep exactly one entry for the case.")
+
+    # Deleting a case and its entry together is valid; stale entries are not.
+    for entry in manifest:
+        removed = entry_folders(entry, known) & (previous - current)
+        if removed:
+            errors.append(f"manifest.json: entry {show(entry.get('name'))} still refers to removed directories "
+                          f"{show(sorted(removed))}. Remove this entry too, or update it to the renamed case directory.")
+
+    cases = []
+    for directory in sorted(selected):
         folder = Path(directory)
         name = kebab_case(directory)
         problems = []
-        if not name:
+        if directory in structural and not name:
             problems.append("The directory name becomes empty after conversion to kebab-case. "
                             "Rename it to include Latin letters or digits, such as My New Case.")
-        for extension in ("md", "png"):
-            if not regular_file(folder / f"{directory}.{extension}"):
-                problems.append(file_problem(folder / f"{directory}.{extension}"))
+        if directory in structural:
+            for extension in ("md", "png"):
+                if not regular_file(folder / f"{directory}.{extension}"):
+                    problems.append(file_problem(folder / f"{directory}.{extension}"))
+        else:
+            log(f"Skipping directory/name checks for {show(directory)}: its paths are unchanged. "
+                "Rechecking the changed manifest entry and its resources only.")
         local = regular_file(folder / f"{directory}.science")
-        log(f"Checking directory {show(directory)} (manifest name: {show(name)}). "
+        log(f"Selected case {show(directory)} (manifest name: {show(name)}). "
             + ("Found the local .science file; case.release_url must be empty."
                if local else "No same-named .science file; the manifest step will require case.release_url."))
         cases.append({
@@ -220,10 +309,7 @@ def validate_manifest(cases):
         if not isinstance(case, dict) or any(type(case.get(key)) is not kind for key, kind in required.items()):
             raise ValueError(f"CASES_JSON item {index + 1} is incomplete or has the wrong field types. "
                              "Rerun the directories step and pass its complete cases output to this step.")
-    manifest = read_json(Path("manifest.json").read_text(encoding="utf-8"), "manifest.json")
-    if not isinstance(manifest, list) or any(not isinstance(entry, dict) for entry in manifest):
-        raise ValueError("manifest.json must contain a JSON array of case objects, such as [{\"title\": ...}]. "
-                         "Put the entries inside square brackets and make each entry an object.")
+    manifest = manifest_entries(Path("manifest.json").read_text(encoding="utf-8"), "manifest.json")
     errors = []
     names = [case["name"] for case in cases]
     for case in cases:
@@ -267,7 +353,7 @@ def main():
     scan.add_argument("--new-branch-base", help="Default branch ref for a new feature branch's first push")
     commands.add_parser("manifest", help="Read directory results from CASES_JSON")
     args = parser.parse_args()
-    stage = "Directory check" if args.stage == "directories" else "Manifest check"
+    stage = "Change detection and directory check" if args.stage == "directories" else "Manifest check"
     actions = os.environ.get("GITHUB_ACTIONS") == "true"
     if actions:
         print(f"::group::{stage}", file=sys.stderr)
@@ -292,12 +378,13 @@ def main():
             report_error(error)
         if errors:
             noun = "problem" if len(errors) == 1 else "problems"
-            log(f"FAIL: {stage} found {len(errors)} {noun}. New case directories checked: {len(cases)}. "
+            log(f"FAIL: {stage} found {len(errors)} {noun}. Affected case directories: {len(cases)}. "
                 "Follow the fixes above, commit the changes, and rerun the workflow.")
         elif not cases:
-            log("PASS: No new case directories to check. Existing case directories are outside this check's scope.")
+            log("PASS: No relevant case changes need validation. Directory paths and manifest entries are unchanged, "
+                "or cases and their entries were removed together. Skipping further checks.")
         else:
-            log(f"PASS: {stage} finished. No problems found. New case directories checked: {len(cases)}.")
+            log(f"PASS: {stage} finished. No problems found. Affected case directories: {len(cases)}.")
         return 1 if errors else 0
     except OSError as error:
         report_error(f"Couldn't access {show(error.filename)}: {error.strerror}. Check that the file exists "

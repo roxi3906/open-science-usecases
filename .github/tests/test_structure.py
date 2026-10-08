@@ -84,7 +84,9 @@ class StructureTests(unittest.TestCase):
 
     def check_manifest(self, expected=0):
         scan, values = self.scan()
-        self.assertEqual(scan.returncode, 0, scan.stdout + scan.stderr)
+        if scan.returncode:
+            self.assertEqual(scan.returncode, expected, scan.stdout + scan.stderr)
+            return scan
         result, _ = self.run_stage("manifest", cases=json.loads(values["cases"]))
         self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
         return result
@@ -108,8 +110,8 @@ class StructureTests(unittest.TestCase):
         self.assertFalse(json.loads(values["cases"])[0]["has_local_science"])
         self.check_manifest()
 
-    def test_existing_directories_and_hidden_tooling_are_not_new_cases(self):
-        self.write("Existing Case/nested/new.txt", "added")
+    def test_unrelated_root_files_and_hidden_tooling_are_skipped(self):
+        self.write("README.md", "updated")
         self.write(".github/workflows/check.yml", "name: test")
         self.commit()
         result, values = self.scan()
@@ -226,7 +228,8 @@ class StructureTests(unittest.TestCase):
         for content in ("{", "{}", "[null]", '[{"name": "x", "name": "y"}]'):
             with self.subTest(content=content):
                 self.write("manifest.json", content)
-                result = self.check_manifest(expected=1)
+                result, _ = self.scan()
+                self.assertEqual(result.returncode, 1)
                 self.assertNotIn("Traceback", result.stderr)
 
     def test_invalid_base_fails_instead_of_silently_skipping(self):
@@ -263,7 +266,8 @@ class StructureTests(unittest.TestCase):
         self.case()
         self.commit()
         self.write("manifest.json", '[\n{"name": }\n]')
-        result = self.check_manifest(expected=1)
+        result, _ = self.scan()
+        self.assertEqual(result.returncode, 1)
         self.assertIn("manifest.json", result.stderr)
         self.assertIn("line 2", result.stderr)
         self.assertIn("column", result.stderr)
@@ -300,7 +304,7 @@ class StructureTests(unittest.TestCase):
         result, _ = self.scan()
         self.assertEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout), [])
-        self.assertIn("No new case directories", result.stderr)
+        self.assertIn("No relevant case changes", result.stderr)
 
     def test_directory_names_cannot_inject_legacy_actions_commands(self):
         directory = "Case ##[error]injected ##[endgroup]"
@@ -373,6 +377,170 @@ class StructureTests(unittest.TestCase):
         self.commit()
         result, _ = self.scan()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+    def existing_case(self):
+        entry = self.case()
+        self.commit()
+        self.base = self.git("rev-parse", "HEAD").strip()
+        return entry
+
+    def test_only_file_contents_changed_skips_checks(self):
+        self.existing_case()
+        self.write(f"{TITLE}/{TITLE}.md", "new content without a filename change")
+        self.commit()
+        result, values = self.scan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(values["cases"]), [])
+        self.assertIn("No relevant case changes", result.stderr)
+
+    def test_renaming_existing_resource_triggers_directory_validation(self):
+        self.existing_case()
+        self.git("mv", f"{TITLE}/{TITLE}.png", f"{TITLE}/wrong.png")
+        self.commit()
+        result, values = self.scan()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(values["cases"])[0]["directory"], TITLE)
+        self.assertIn(f"{TITLE}.png", result.stderr)
+
+    def test_deleting_existing_resource_triggers_directory_validation(self):
+        self.existing_case()
+        self.git("rm", f"{TITLE}/{TITLE}.md")
+        self.commit()
+        result, _ = self.scan()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(f"{TITLE}.md", result.stderr)
+
+    def test_adding_file_in_existing_case_rechecks_that_case(self):
+        self.existing_case()
+        self.write(f"{TITLE}/notes.txt", "new file")
+        self.commit()
+        result, values = self.scan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([item["directory"] for item in json.loads(values["cases"])], [TITLE])
+        self.check_manifest()
+
+    def test_manifest_only_change_selects_case_and_skips_directory_checks(self):
+        entry = self.existing_case()
+        entry["cover"]["bytes"] = 54321
+        self.manifest([entry])
+        self.commit()
+        scan, values = self.scan()
+        self.assertEqual(scan.returncode, 0, scan.stderr)
+        self.assertEqual([item["directory"] for item in json.loads(values["cases"])], [TITLE])
+        self.assertIn("Skipping directory/name checks", scan.stderr)
+        result = self.check_manifest(expected=1)
+        self.assertIn("54321", result.stderr)
+
+    def test_manifest_only_change_does_not_recheck_unchanged_invalid_case(self):
+        entry = self.case()
+        legacy = {"title": "Existing Case", "name": "existing-case"}
+        self.manifest([entry, legacy])
+        self.commit()
+        self.base = self.git("rev-parse", "HEAD").strip()
+        content = "updated introduction"
+        self.write(f"{TITLE}/{TITLE}.md", content)
+        entry["introduction"]["bytes"] = len(content)
+        entry["introduction"]["sha256"] = hashlib.sha256(content.encode()).hexdigest()
+        self.manifest([entry, legacy])
+        self.commit()
+        self.check_manifest()
+        _, values = self.scan()
+        self.assertEqual([item["directory"] for item in json.loads(values["cases"])], [TITLE])
+
+    def test_manifest_formatting_and_reordering_do_not_revalidate_cases(self):
+        entry = self.case()
+        legacy = {"title": "Existing Case", "name": "existing-case"}
+        self.manifest([entry, legacy])
+        self.commit()
+        self.base = self.git("rev-parse", "HEAD").strip()
+        self.write("manifest.json", json.dumps([legacy, entry], indent=4, sort_keys=True))
+        self.commit()
+        result, values = self.scan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(values["cases"]), [])
+
+    def test_manifest_name_change_without_directory_change_fails(self):
+        entry = self.existing_case()
+        entry["name"] = "wrong-name"
+        self.manifest([entry]); self.commit()
+        self.check_manifest(expected=1)
+
+    def test_removing_manifest_entry_while_directory_remains_fails(self):
+        self.existing_case()
+        self.manifest([]); self.commit()
+        self.check_manifest(expected=1)
+
+    def test_removing_case_and_manifest_entry_together_passes(self):
+        self.existing_case()
+        self.git("rm", "-r", TITLE)
+        self.manifest([]); self.commit()
+        result, values = self.scan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(values["cases"]), [])
+
+    def test_removing_directory_with_manifest_entry_remaining_fails(self):
+        self.existing_case()
+        self.git("rm", "-r", TITLE); self.commit()
+        result, _ = self.scan()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(TITLE, result.stderr)
+        self.assertIn("manifest", result.stderr)
+
+    def test_added_manifest_entry_without_a_directory_fails(self):
+        self.manifest([{"title": "Ghost Case", "name": "ghost-case"}]); self.commit()
+        result, _ = self.scan()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("ghost-case", result.stderr)
+
+    def test_science_removal_with_release_url_update_passes(self):
+        entry = self.existing_case()
+        self.git("rm", f"{TITLE}/{TITLE}.science")
+        entry["case"]["release_url"] = URL
+        self.manifest([entry]); self.commit()
+        self.check_manifest()
+
+    def test_bad_new_entry_cannot_hide_behind_an_unchanged_good_entry(self):
+        entry = self.existing_case()
+        duplicate = copy.deepcopy(entry)
+        duplicate["name"] = "wrong-name"
+        duplicate["cover"]["bytes"] = -1
+        self.manifest([entry, duplicate]); self.commit()
+        result = self.check_manifest(expected=1)
+        self.assertIn("wrong-name", result.stderr)
+        self.assertIn(NAME, result.stderr)
+
+    def rename_complete_case(self, title, name):
+        entry = self.existing_case()
+        self.git("mv", TITLE, title)
+        for key, extension in (("cover", "png"), ("case", "science"), ("introduction", "md")):
+            filename = f"{title}.{extension}"
+            self.git("mv", f"{title}/{TITLE}.{extension}", f"{title}/{filename}")
+            entry[key]["file_name"] = filename
+            entry[key]["path"] = f"{title}/{filename}"
+        entry["title"], entry["name"] = title, name
+        self.manifest([entry]); self.commit()
+        result, values = self.scan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([item["directory"] for item in json.loads(values["cases"])], [title])
+        self.check_manifest()
+
+    def test_complete_case_rename_selects_new_directory_only(self):
+        self.rename_complete_case("Renamed Case", "renamed-case")
+
+    def test_case_rename_preserving_kebab_name_is_not_a_stale_entry(self):
+        self.rename_complete_case(TITLE.replace("—", " - "), NAME)
+
+    def test_manifest_boolean_is_not_equal_to_numeric_metadata(self):
+        entry = self.case()
+        self.write(f"{TITLE}/{TITLE}.png", "x")
+        entry["cover"]["bytes"] = 1
+        entry["cover"]["sha256"] = hashlib.sha256(b"x").hexdigest()
+        self.manifest([entry]); self.commit()
+        self.base = self.git("rev-parse", "HEAD").strip()
+        entry["cover"]["bytes"] = True
+        self.manifest([entry]); self.commit()
+        result = self.check_manifest(expected=1)
+        self.assertIn("cover.bytes", result.stderr)
 
 
 if __name__ == "__main__":
