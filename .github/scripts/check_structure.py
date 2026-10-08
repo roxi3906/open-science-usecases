@@ -132,7 +132,8 @@ def directories(base, merge_base=False, new_branch_base=None):
     # Compare path sets rather than file contents: additions, removals and renames
     # affect structure; editing a file in place does not.
     structural = case_folders(previous_paths ^ current_paths)
-    changed_paths = set(git("diff", "--name-only", "-z", base, "HEAD").split("\0")) if base else current_paths
+    # Keep both paths when a file is renamed, including manifest.json's old path.
+    changed_paths = set(git("diff", "--no-renames", "--name-only", "-z", base, "HEAD").split("\0")) if base else current_paths
     manifest_changed = "manifest.json" in changed_paths
     log(f"Cases with path changes: {len(structural)}. manifest.json changed: {manifest_changed}.")
     if not structural and not manifest_changed:

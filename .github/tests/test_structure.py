@@ -362,6 +362,33 @@ class StructureTests(unittest.TestCase):
         result = self.check_manifest(expected=1)
         self.assertIn("multiple new directories", result.stderr)
 
+    def test_pr_after_force_push_still_checks_earlier_case_changes(self):
+        self.case()
+        (self.root / TITLE / f"{TITLE}.png").unlink()
+        self.commit()
+        self.write("README.md", "documentation update")
+        self.commit()
+        before = self.git("rev-parse", "HEAD").strip()
+        self.write("README.md", "rewritten documentation update")
+        self.git("add", "README.md")
+        self.git("-c", "commit.gpgsign=false", "commit", "--amend", "--no-edit", "-q")
+
+        checkout = self.root / "fresh-checkout"
+        self.git("clone", "--no-local", "--quiet", str(self.root), str(checkout))
+        old_commit = subprocess.run(
+            ["git", "cat-file", "-e", before], cwd=checkout, capture_output=True)
+        self.assertNotEqual(old_commit.returncode, 0)
+        original_root = self.root
+        try:
+            self.root = checkout
+            result, values = self.run_stage("directories", "--base", self.base, "--merge-base")
+        finally:
+            self.root = original_root
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual([case["directory"] for case in json.loads(values["cases"])], [TITLE])
+        self.assertIn(f"{TITLE}.png", result.stderr)
+        self.assertNotIn("Couldn't compare the Git trees", result.stderr)
+
     def test_renamed_case_is_a_new_directory(self):
         self.git("mv", "Existing Case", "Renamed Case")
         self.commit()
@@ -469,6 +496,15 @@ class StructureTests(unittest.TestCase):
         self.existing_case()
         self.manifest([]); self.commit()
         self.check_manifest(expected=1)
+
+    def test_renaming_manifest_cannot_skip_validation(self):
+        self.existing_case()
+        self.git("mv", "manifest.json", "renamed.json")
+        self.commit()
+        result, _ = self.scan()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("manifest.json", result.stderr)
+        self.assertIn("Couldn't access", result.stderr)
 
     def test_removing_case_and_manifest_entry_together_passes(self):
         self.existing_case()
