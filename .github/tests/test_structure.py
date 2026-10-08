@@ -167,6 +167,45 @@ class StructureTests(unittest.TestCase):
         result = self.check_manifest(expected=1)
         self.assertIn("HEAD reports 123456", result.stderr)
 
+    def test_checked_cases_publish_with_optional_ignored_checksums(self):
+        publisher = SCRIPT.with_name("publish.py")
+        for remote in (False, True):
+            for checksum in ("absent", None, "wrong", {}):
+                with self.subTest(remote=remote, checksum=checksum):
+                    entry = self.case(remote=remote)
+                    if remote:
+                        (self.root / entry["case"]["path"]).unlink(missing_ok=True)
+                    for key in ("cover", "case", "introduction"):
+                        if checksum == "absent":
+                            del entry[key]["sha256"]
+                        else:
+                            entry[key]["sha256"] = checksum
+                    self.manifest([entry]); self.commit()
+                    self.check_manifest()
+                    result = subprocess.run(
+                        [sys.executable, str(publisher), "--dry-run"], cwd=self.root,
+                        env={**os.environ, "AWS_TARGET_FOLDER": "s3://test-bucket/cases"},
+                        text=True, capture_output=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("Validated {} local files".format(3 if remote else 4), result.stdout)
+                    self.assertTrue(all(method == "HEAD" for method, _ in self.http.requests))
+
+    def test_science_source_requires_exactly_one_local_file_or_release_url(self):
+        for local, release, expected, detail in (
+            (True, False, 0, ""), (False, True, 0, ""),
+            (True, True, 1, "both"), (False, False, 1, "neither"),
+        ):
+            with self.subTest(local=local, release=release):
+                entry = self.case(remote=not local)
+                if not local:
+                    (self.root / entry["case"]["path"]).unlink(missing_ok=True)
+                entry["case"]["release_url"] = self.url if release else ""
+                self.manifest([entry]); self.commit()
+                result = self.check_manifest(expected=expected)
+                if detail:
+                    self.assertIn(detail, result.stderr)
+
     def test_remote_case_without_readme_passes_using_manifest_url(self):
         self.case(remote=True)
         self.commit()

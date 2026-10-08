@@ -118,24 +118,23 @@ class PublishTests(unittest.TestCase):
         self.assertIn("681599670", result.stdout)
         self.assertIn("remote-tag", result.stdout)
 
-    def test_local_file_takes_priority_over_release_url_without_head(self):
+    def test_local_file_and_release_url_together_block_publish_without_head(self):
         self.remote()
-        result = self.run_publish()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.requests, [])
-        self.assertEqual(len(self.uploads()), 4)
-        self.assertIn("s3://test-bucket/cases/a-test-case/A Test—Case.science",
-                      [call[3] for call in self.uploads()])
-
-    def test_corrupt_local_file_does_not_fall_back_to_release_url(self):
-        self.remote()
-        path = self.root / self.case["case"]["path"]
-        path.write_bytes(b"x" * path.stat().st_size)
         result = self.run_publish()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("SHA-256 mismatch", result.stderr)
+        self.assertIn("both", result.stderr)
         self.assertEqual(self.requests, [])
         self.assertEqual(self.uploads(), [])
+
+    def test_missing_local_file_and_empty_release_url_block_publish(self):
+        (self.root / self.case["case"]["path"]).unlink()
+        for release_url in ("", " "):
+            with self.subTest(release_url=release_url):
+                self.case["case"]["release_url"] = release_url
+                result = self.run_publish()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("neither", result.stderr)
+                self.assertEqual(self.uploads(), [])
 
     def test_non_utf8_head_headers_do_not_block_local_uploads(self):
         self.remote(etag='"caf\xe9\x85"')

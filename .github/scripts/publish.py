@@ -2,7 +2,6 @@
 """Publish local resources and manifest to S3; inspect remote resources with HEAD only."""
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -37,18 +36,22 @@ def publication_plan(root, target):
             path = (root / relative).resolve()
             if relative.is_absolute() or root not in path.parents:
                 raise ValueError("Resource path must stay inside the repository: " + str(relative))
-            # A local copy always wins and must pass validation before upload.
-            if not path.exists() and resource.get("release_url"):
-                remote.append((name, resource))
-                continue
+            if key == "case":
+                release_url = resource["release_url"]
+                if not isinstance(release_url, str):
+                    raise ValueError("case.release_url must be a string: " + name)
+                if path.is_file():
+                    if release_url != "":
+                        raise ValueError("Local .science and release_url are both present; "
+                                         "set release_url to an empty string: " + name)
+                elif not release_url.strip():
+                    raise ValueError("Found neither a local .science nor a release_url: " + name)
+                else:
+                    remote.append((name, resource))
+                    continue
             if path.stat().st_size != resource["bytes"]:
                 raise ValueError("Size mismatch: " + str(relative))
-            digest = hashlib.sha256()
-            with path.open("rb") as source:
-                for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                    digest.update(chunk)
-            if digest.hexdigest() != resource["sha256"]:
-                raise ValueError("SHA-256 mismatch: " + str(relative))
+            # Match the structure checker: sha256 is optional, unvalidated metadata.
             uploads.append((path, target + "/" + name + "/" + filename))
     # Publish the index only after every resource upload has succeeded.
     uploads.append((root / "manifest.json", target + "/manifest.json"))
@@ -64,7 +67,9 @@ def inspect_remote(name, resource):
         capture_output=True, check=False,
     )
     info = {"name": name, "file_name": resource["file_name"],
-            "manifest_bytes": resource["bytes"], "manifest_sha256": resource["sha256"]}
+            "manifest_bytes": resource["bytes"]}
+    if "sha256" in resource:
+        info["manifest_sha256"] = resource["sha256"]
     if result.returncode:
         info["status"] = "HEAD unavailable; remote resource skipped"
         info["curl_exit_code"] = result.returncode

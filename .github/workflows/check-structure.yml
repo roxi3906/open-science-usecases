@@ -35,7 +35,6 @@ jobs:
           fi
 
       - name: Test the checker
-        if: steps.directories.outputs.cases != '[]'
         run: python3 -B -m unittest discover -s .github/tests -v
 
       - name: Check matching manifest entries
