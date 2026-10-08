@@ -170,3 +170,8 @@ class PublishTests(GitFixture):
         self.write_manifest(); legacy = self.commit()
         self.change('cover')
         self.assertEqual(self.keys(self.plan(before=legacy)), ['a-case/A Case.png', 'manifest.json'])
+
+    def test_unchanged_legacy_case_without_introduction_is_not_revalidated(self):
+        del self.entry['introduction']; self.write_manifest(); legacy = self.commit()
+        (self.root / 'tool.py').write_text('# tooling only'); self.commit()
+        self.assertEqual(self.keys(self.plan(before=legacy)), [])

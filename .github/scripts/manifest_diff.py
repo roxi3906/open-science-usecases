@@ -45,7 +45,11 @@ def local_resources(entries):
     resources = {}
     for case in entries:
         for kind in ('cover', 'case', 'introduction'):
-            resource = case[kind]
+            resource = case.get(kind)
+            if resource is None:
+                # Some untouched legacy cases predate required introductions.
+                # Completeness of affected entries belongs to the structure check.
+                continue
             if kind == 'case' and resource.get('release_url'):
                 continue
             key = case['name'] + '/' + resource['file_name']

@@ -69,3 +69,8 @@ class DeclarationTests(GitFixture):
         path = self.root / self.entry['cover']['path']
         path.unlink(); path.symlink_to('../manifest.json'); self.commit()
         self.assertTrue(any('regular file' in error for error in self.check()))
+
+    def test_unchanged_legacy_case_without_introduction_is_not_revalidated(self):
+        del self.entry['introduction']; self.write_manifest(); legacy = self.commit()
+        (self.root / 'tool.py').write_text('# tooling only'); self.commit()
+        self.assertEqual(self.check(before=legacy), [])
