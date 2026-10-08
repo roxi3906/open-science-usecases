@@ -318,8 +318,13 @@ def validate_resource(resource, case, key, extension, errors):
         release_url = resource.get("release_url")
         if case["has_local_science"]:
             if release_url != "":
-                errors.append(f"{label}.release_url: found {show(release_url)}, but "
-                              f"{show(expected_path)} is stored locally. Set release_url to an empty string (\"\").")
+                errors.append(f"{label}.release_url: found {show(release_url)} alongside local "
+                              f"{show(expected_path)}. A local .science file and release_url must not both "
+                              "be provided. Set release_url to an empty string (\"\").")
+        elif isinstance(release_url, str) and not release_url.strip():
+            errors.append(f"{label}.release_url: found neither a local {show(expected_path)} nor a "
+                          "nonempty release_url. Provide exactly one: add the same-named .science file "
+                          "or set release_url to a complete HTTP(S) .science download URL.")
         elif not is_science_url(release_url):
             errors.append(f"{label}.release_url: found {show(release_url)}, and there is no local "
                           f"{show(expected_path)}. Add a complete HTTP(S) download URL whose path ends in .science "

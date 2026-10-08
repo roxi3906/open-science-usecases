@@ -1,0 +1,67 @@
+name: publish
+
+on:
+  workflow_run:
+    workflows: [Check case structure]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    concurrency:
+      group: publish
+      # Late check completions must not cancel a newer queued publication.
+      queue: max
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the validated commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Test publishing behavior
+        run: python3 -B -m unittest discover -s .github/tests -p test_publish.py -v
+
+      - name: Skip superseded main commits
+        id: current-main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          latest_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [ "$CHECKED_SHA" = "$latest_sha" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping publication because main has a newer commit."
+          fi
+
+      - name: Publish local resources to S3
+        if: steps.current-main.outputs.current == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_TARGET_FOLDER: ${{ secrets.AWS_TARGET_FOLDER }}
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: |
+          for secret in AWS_ACCESS_KEY_ID AWS_DEFAULT_REGION AWS_SECRET_ACCESS_KEY AWS_TARGET_FOLDER; do
+            if [ -z "${!secret}" ]; then
+              echo "::error::Missing required secret: $secret"
+              exit 1
+            fi
+          done
+          aws --version
+          curl --version
+          python3 .github/scripts/publish.py
