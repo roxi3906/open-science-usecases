@@ -94,7 +94,7 @@ class StructureTests(unittest.TestCase):
                 "file_name": filename,
                 "path": path,
                 "bytes": len(content.encode()),
-                "sha256": "ignored checksum",
+                "sha256": "a" * 64,
             }
             if key != "case" or not remote:
                 self.write(path, content)
@@ -145,19 +145,45 @@ class StructureTests(unittest.TestCase):
         }])
         self.check_manifest()
 
-    def test_all_repository_resources_use_head_with_optional_ignored_checksums(self):
+    def test_all_repository_resources_use_head_without_recomputing_checksums(self):
         entry = self.case()
-        for key in ("cover", "case", "introduction"):
-            del entry[key]["sha256"]
-        self.manifest([entry]); self.commit()
+        self.commit()
         self.check_manifest()
         expected = [("HEAD", "/repository/" + quote(entry[key]["path"]))
                     for key in ("cover", "case", "introduction")]
         self.assertEqual(self.http.requests, expected)
-        for key, value in (("cover", None), ("case", "wrong"), ("introduction", {})):
-            entry[key]["sha256"] = value
-        self.manifest([entry])
+
+    def test_resource_checksums_must_be_64_hexadecimal_characters(self):
+        entry = self.case(remote=True)
+        self.commit()
+        for key in ("cover", "case", "introduction"):
+            for checksum in (None, False, 123, {}, [], "", " ", "a" * 63,
+                             "a" * 65, "g" * 64, "a" * 63 + "é",
+                             "a" * 64 + "\n", " " + "a" * 64):
+                with self.subTest(key=key, checksum=checksum):
+                    changed = copy.deepcopy(entry)
+                    changed[key]["sha256"] = checksum
+                    self.manifest([changed])
+                    result = self.check_manifest(expected=1)
+                    self.assertIn(key, result.stderr)
+                    self.assertIn("sha256", result.stderr)
+                    self.assertIn("64", result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+
+    def test_uppercase_and_mixed_case_checksums_are_valid(self):
+        entry = self.case(remote=True)
+        entry["cover"]["sha256"] = "ABCDEF0123456789" * 4
+        entry["case"]["sha256"] = "aBcDeF0123456789" * 4
+        self.manifest([entry]); self.commit()
         self.check_manifest()
+        self.assertTrue(all(method == "HEAD" for method, _ in self.http.requests))
+
+    def test_remote_resource_checksum_is_required(self):
+        entry = self.case(remote=True)
+        del entry["case"]["sha256"]
+        self.manifest([entry]); self.commit()
+        result = self.check_manifest(expected=1)
+        self.assertIn("missing fields: sha256", result.stderr)
 
     def test_repository_size_is_checked_against_head_not_local_stat(self):
         entry = self.case()
@@ -167,29 +193,23 @@ class StructureTests(unittest.TestCase):
         result = self.check_manifest(expected=1)
         self.assertIn("HEAD reports 123456", result.stderr)
 
-    def test_checked_cases_publish_with_optional_ignored_checksums(self):
+    def test_checked_cases_publish_with_valid_checksums(self):
         publisher = SCRIPT.with_name("publish.py")
         for remote in (False, True):
-            for checksum in ("absent", None, "wrong", {}):
-                with self.subTest(remote=remote, checksum=checksum):
-                    entry = self.case(remote=remote)
-                    if remote:
-                        (self.root / entry["case"]["path"]).unlink(missing_ok=True)
-                    for key in ("cover", "case", "introduction"):
-                        if checksum == "absent":
-                            del entry[key]["sha256"]
-                        else:
-                            entry[key]["sha256"] = checksum
-                    self.manifest([entry]); self.commit()
-                    self.check_manifest()
-                    result = subprocess.run(
-                        [sys.executable, str(publisher), "--dry-run"], cwd=self.root,
-                        env={**os.environ, "AWS_TARGET_FOLDER": "s3://test-bucket/cases"},
-                        text=True, capture_output=True,
-                    )
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    self.assertIn("Validated {} local files".format(3 if remote else 4), result.stdout)
-                    self.assertTrue(all(method == "HEAD" for method, _ in self.http.requests))
+            with self.subTest(remote=remote):
+                entry = self.case(remote=remote)
+                if remote:
+                    (self.root / entry["case"]["path"]).unlink(missing_ok=True)
+                self.manifest([entry]); self.commit()
+                self.check_manifest()
+                result = subprocess.run(
+                    [sys.executable, str(publisher), "--dry-run"], cwd=self.root,
+                    env={**os.environ, "AWS_TARGET_FOLDER": "s3://test-bucket/cases"},
+                    text=True, capture_output=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Validated {} local files".format(3 if remote else 4), result.stdout)
+                self.assertTrue(all(method == "HEAD" for method, _ in self.http.requests))
 
     def test_science_source_requires_exactly_one_local_file_or_release_url(self):
         for local, release, expected, detail in (
@@ -251,17 +271,13 @@ class StructureTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertTrue(CHECKER["is_science_url"](url))
 
-    def test_remote_head_checks_size_without_sha256_or_get(self):
+    def test_remote_head_checks_size_without_recomputing_sha256_or_get(self):
         entry = self.case(remote=True)
         entry["case"]["release_url"] += "?download=1#asset"
-        del entry["case"]["sha256"]
         self.manifest([entry]); self.commit()
         self.check_manifest()
         self.assertIn(("HEAD", "/case.science?download=1"), self.http.requests)
         self.assertTrue(all(method == "HEAD" for method, _ in self.http.requests))
-        entry["case"]["sha256"] = "not checked for remote assets"
-        self.manifest([entry])
-        self.check_manifest()
 
     def test_remote_head_redirects_never_switch_to_get(self):
         self.case(remote=True); self.commit()
@@ -340,8 +356,6 @@ class StructureTests(unittest.TestCase):
         for parent in (None, "cover", "case", "introduction"):
             target = entry if parent is None else entry[parent]
             for key in target:
-                if key == "sha256":
-                    continue
                 with self.subTest(parent=parent, key=key):
                     changed = copy.deepcopy(entry)
                     del (changed if parent is None else changed[parent])[key]
@@ -566,14 +580,22 @@ class StructureTests(unittest.TestCase):
         self.base = self.git("rev-parse", "HEAD").strip()
         return entry
 
-    def test_only_file_contents_changed_skips_checks(self):
-        self.existing_case()
-        self.write(f"{TITLE}/{TITLE}.md", "new content without a filename change")
-        self.commit()
-        result, values = self.scan()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(values["cases"]), [])
-        self.assertIn("No relevant case changes", result.stderr)
+    def test_only_file_contents_changed_rechecks_case_checksums(self):
+        for key in ("cover", "case", "introduction"):
+            with self.subTest(key=key):
+                entry = self.case()
+                del entry[key]["sha256"]
+                self.manifest([entry]); self.commit()
+                self.base = self.git("rev-parse", "HEAD").strip()
+                # Same-size edits with unchanged paths and manifest still need checks.
+                path = self.root / entry[key]["path"]
+                self.write(entry[key]["path"], "x" * path.stat().st_size)
+                self.commit()
+                result, values = self.scan()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual([item["directory"] for item in json.loads(values["cases"])], [TITLE])
+                result = self.check_manifest(expected=1)
+                self.assertIn("sha256", result.stderr)
 
     def test_renaming_existing_resource_triggers_directory_validation(self):
         self.existing_case()

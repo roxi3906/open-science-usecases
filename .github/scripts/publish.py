@@ -51,7 +51,7 @@ def publication_plan(root, target):
                     continue
             if path.stat().st_size != resource["bytes"]:
                 raise ValueError("Size mismatch: " + str(relative))
-            # Match the structure checker: sha256 is optional, unvalidated metadata.
+            # Publishing preserves sha256 metadata without recomputing it.
             uploads.append((path, target + "/" + name + "/" + filename))
     # Publish the index only after every resource upload has succeeded.
     uploads.append((root / "manifest.json", target + "/manifest.json"))
