@@ -183,7 +183,8 @@ class StructureTests(unittest.TestCase):
                     self.manifest([entry]); self.commit()
                     self.check_manifest()
                     result = subprocess.run(
-                        [sys.executable, str(publisher), "--dry-run"], cwd=self.root,
+                        [sys.executable, str(publisher), "--dry-run",
+                         "--before", self.base, "--after", self.git("rev-parse", "HEAD").strip()], cwd=self.root,
                         env={**os.environ, "AWS_TARGET_FOLDER": "s3://test-bucket/cases"},
                         text=True, capture_output=True,
                     )

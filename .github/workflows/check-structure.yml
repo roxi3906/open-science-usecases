@@ -4,16 +4,32 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      before:
+        description: 'Full before SHA; after is the main commit selected when this run is dispatched'
+        required: true
+        type: string
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
 
+# Queue the entire check -> prepare -> publish cycle at the original event,
+# rather than letting independently completed checks race to enqueue publishing.
+concurrency:
+  group: case-publish-${{ github.ref }}
+  queue: max
+  cancel-in-progress: false
+
 jobs:
   check-structure:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      before: ${{ steps.range.outputs.before }}
+      after: ${{ steps.range.outputs.after }}
     steps:
       - name: Check out the proposed tree and history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -22,10 +38,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Validate the original publication range
+        id: range
+        if: github.event_name != 'pull_request'
+        env:
+          BEFORE_SHA: ${{ github.event.before || inputs.before }}
+          AFTER_SHA: ${{ github.event.after || github.sha }}
+        run: python3 .github/scripts/publish.py --before "$BEFORE_SHA" --after "$AFTER_SHA" --validate-range
+
       - name: Detect case changes and check affected directories
         id: directories
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || steps.range.outputs.before }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
@@ -43,3 +67,14 @@ jobs:
           CASES_JSON: ${{ steps.directories.outputs.cases }}
           CASE_FILE_BASE_URL: https://raw.githubusercontent.com/${{ github.event.pull_request.head.repo.full_name || github.repository }}/${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 .github/scripts/check_structure.py manifest
+
+  publish:
+    needs: check-structure
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/publish.yml
+    with:
+      before: ${{ needs.check-structure.outputs.before }}
+      after: ${{ needs.check-structure.outputs.after }}
+    secrets: inherit

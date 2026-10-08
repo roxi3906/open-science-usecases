@@ -1,6 +1,7 @@
-import hashlib
 import copy
+import hashlib
 import http.server
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -9,9 +10,49 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
+
+SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/publish.py'
+spec = importlib.util.spec_from_file_location('publisher', SCRIPT)
+publisher = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(publisher)
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "publish.py"
+class MemoryS3:
+    """Replace only the S3 boundary; Git, files, planning and publishing stay real."""
+    def __init__(self):
+        self.objects = {}
+        self.calls = []
+        self.fail_key = None
+
+    def head(self, key):
+        self.calls.append(('head', key))
+        obj = self.objects.get(key)
+        return copy.deepcopy(obj['head']) if obj else None
+
+    def tags(self, key):
+        self.calls.append(('tags', key))
+        return copy.deepcopy(self.objects[key]['tags'])
+
+    def tag(self, key, tags):
+        self.calls.append(('tag', key))
+        self.objects[key]['tags'] = copy.deepcopy(tags)
+
+    def download(self, key, path):
+        self.calls.append(('get', key))
+        path.write_bytes(self.objects[key]['body'])
+
+    def upload(self, path, key, sha256, commit):
+        self.calls.append(('upload', key))
+        if key == self.fail_key:
+            raise ValueError('Simulated upload failure')
+        self.seed(key, path.read_bytes(), commit)
+
+    def seed(self, key, body, commit=None, checksum=True):
+        metadata = {'sha256': hashlib.sha256(body).hexdigest()} if checksum else {}
+        if commit:
+            metadata['source-commit'] = commit
+        self.objects[key] = {'body': body, 'head': {'ContentLength': len(body), 'Metadata': metadata}, 'tags': []}
 
 
 class PublishTests(unittest.TestCase):
@@ -19,387 +60,273 @@ class PublishTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.calls = self.root / "uploads.jsonl"
-        self.objects = self.root / "s3"
-        bin_dir = self.root / "bin"
-        bin_dir.mkdir()
-        aws = bin_dir / "aws"
-        aws.write_text(
-            "#!" + sys.executable + "\n"
-            "import json, os, sys\n"
-            "from pathlib import Path\n"
-            "with open(os.environ['UPLOAD_LOG'], 'a') as f:\n"
-            "    f.write(json.dumps(sys.argv[1:]) + '\\n')\n"
-            "if os.environ.get('UPLOAD_EXIT', '0') != '0':\n"
-            "    sys.exit(int(os.environ['UPLOAD_EXIT']))\n"
-            "assert sys.argv[1:3] == ['s3', 'cp']\n"
-            "assert sys.argv[4].startswith('s3://')\n"
-            "target = Path(os.environ['S3_ROOT']) / sys.argv[4][5:]\n"
-            "target.parent.mkdir(parents=True, exist_ok=True)\n"
-            "target.write_bytes(Path(sys.argv[3]).read_bytes())\n"
-        )
-        aws.chmod(0o755)
-        self.env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'],
-                        UPLOAD_LOG=str(self.calls), S3_ROOT=str(self.objects),
-                        AWS_TARGET_FOLDER="s3://test-bucket/cases/")
-        self.case = {"name": "a-test-case", "title": "A Test Case"}
-        for key, suffix in [("cover", "png"), ("case", "science"), ("introduction", "md")]:
-            name = "A Test—Case." + suffix
-            path = self.root / "A Test Case" / name
-            path.parent.mkdir(exist_ok=True)
-            path.write_bytes(b"sample " + suffix.encode())
-            self.case[key] = {
-                "file_name": name, "path": str(path.relative_to(self.root)),
-                "bytes": path.stat().st_size,
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-            }
-        self.case["case"]["release_url"] = ""
-
-    def run_publish(self, *args, cases=None):
-        (self.root / "manifest.json").write_text(json.dumps(cases or [self.case]))
-        return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.root,
-                              env=self.env, capture_output=True, text=True)
-
-    def uploads(self):
-        return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
+        self.git('init', '-q')
+        self.git('config', 'user.name', 'Test')
+        self.git('config', 'user.email', 'test@example.invalid')
+        self.cases = []
+        self.write_manifest()
+        self.initial = self.commit()
+        self.case = self.add_case('A Case', 'a-case')
+        self.write_manifest()
+        self.base = self.commit()
+        self.s3 = MemoryS3()
 
     def git(self, *args):
-        return subprocess.check_output(["git", *args], cwd=self.root, text=True).strip()
+        return subprocess.check_output(['git', *args], cwd=self.root, stderr=subprocess.PIPE).decode().strip()
 
-    def baseline(self, cases=None):
-        # Use real Git blobs so equal-size edits cannot hide behind file metadata.
-        (self.root / "manifest.json").write_text(json.dumps(cases or [self.case]))
-        self.git("init", "-q")
-        self.git("config", "user.email", "test@example.com")
-        self.git("config", "user.name", "Test")
-        self.git("add", "manifest.json", "A Test Case")
-        self.git("commit", "-qm", "test: baseline")
-        return self.git("rev-parse", "HEAD")
+    def commit(self):
+        self.git('add', '.')
+        self.git('-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-qm', 'test: fixture')
+        return self.git('rev-parse', 'HEAD')
 
-    def test_unchanged_publication_has_no_uploads(self):
-        base = self.baseline()
-        result = self.run_publish("--base", base)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.uploads(), [])
-
-    def test_content_only_change_replaces_just_one_same_size_file(self):
-        base = self.baseline()
-        path = self.root / self.case["introduction"]["path"]
-        previous = path.stat()
-        path.write_bytes(b"x" * previous.st_size)
-        os.utime(path, ns=(previous.st_atime_ns, previous.st_mtime_ns))
-        result = self.run_publish("--base", base)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([call[3] for call in self.uploads()], [
-            "s3://test-bucket/cases/a-test-case/A Test—Case.md",
-        ])
-
-    def test_manifest_only_change_does_not_reupload_resources(self):
-        base = self.baseline()
-        self.case["title"] = "Updated title"
-        result = self.run_publish("--base", base)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([call[3] for call in self.uploads()], [
-            "s3://test-bucket/cases/manifest.json",
-        ])
-
-    def test_new_directory_uploads_only_new_resources_then_manifest(self):
-        base = self.baseline()
-        new_case = copy.deepcopy(self.case)
-        new_case.update(name="new-case", title="New Case")
-        for key, suffix in [("cover", "png"), ("case", "science"), ("introduction", "md")]:
-            path = self.root / "New Case" / ("New Case." + suffix)
+    def add_case(self, title, name):
+        case = {'title': title, 'name': name}
+        for key, extension in [('cover', 'png'), ('case', 'science'), ('introduction', 'md')]:
+            filename = title + '.' + extension
+            path = self.root / title / filename
             path.parent.mkdir(exist_ok=True)
-            path.write_bytes((self.root / self.case[key]["path"]).read_bytes())
-            new_case[key].update(file_name=path.name, path=str(path.relative_to(self.root)))
-        result = self.run_publish("--base", base, cases=[self.case, new_case])
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([call[3] for call in self.uploads()], [
-            "s3://test-bucket/cases/new-case/New Case.png",
-            "s3://test-bucket/cases/new-case/New Case.science",
-            "s3://test-bucket/cases/new-case/New Case.md",
-            "s3://test-bucket/cases/manifest.json",
-        ])
+            path.write_bytes(b'fixture ' + extension.encode())
+            case[key] = {'path': str(path.relative_to(self.root)), 'file_name': filename,
+                         'bytes': path.stat().st_size, 'sha256': 'optional and untrusted'}
+        case['case']['release_url'] = ''
+        self.cases.append(case)
+        return case
 
-    def test_renamed_destination_uploads_even_when_contents_are_identical(self):
-        base = self.baseline()
-        self.case["introduction"]["file_name"] = "Renamed.md"
-        result = self.run_publish("--base", base)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([call[3] for call in self.uploads()], [
-            "s3://test-bucket/cases/a-test-case/Renamed.md",
-            "s3://test-bucket/cases/manifest.json",
-        ])
+    def write_manifest(self):
+        (self.root / 'manifest.json').write_text(json.dumps(self.cases))
 
-    def test_prepare_exports_empty_plan_without_aws_credentials_or_remote_head(self):
-        self.remote()
-        (self.root / self.case["case"]["path"]).unlink()
-        base = self.baseline()
-        self.env.pop("AWS_TARGET_FOLDER")
-        output = self.root / "output"
-        self.env["GITHUB_OUTPUT"] = str(output)
-        result = self.run_publish("--base", base, "--prepare", str(self.root / "plan.json"))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        plan = json.loads((self.root / "plan.json").read_text())
-        self.assertEqual(plan["files"], [])
-        self.assertIn("has_uploads=false\n", output.read_text())
+    def change(self, key, content=None):
+        path = self.root / self.case[key]['path']
+        path.write_bytes(content or b'x' * path.stat().st_size)
+        return path
+
+    def plan(self, before=None, after=None):
+        return publisher.prepare(self.root, before or self.base, after or self.git('rev-parse', 'HEAD'), self.s3)
+
+    def apply(self, plan):
+        publisher.apply(self.root, plan, self.s3)
+
+    def uploads(self):
+        return [key for operation, key in self.s3.calls if operation == 'upload']
+
+    def test_multi_commit_push_includes_first_and_last_commit(self):
+        self.change('cover'); self.commit()
+        self.change('introduction'); after = self.commit()
+        plan = self.plan(after=after)
+        self.assertEqual([item['key'] for item in plan['files']], ['a-case/A Case.png', 'a-case/A Case.md'])
+        self.apply(plan)
+        self.assertEqual(self.uploads(), ['a-case/A Case.png', 'a-case/A Case.md'])
+
+    def test_same_size_content_change_replaces_only_that_file(self):
+        path = self.root / self.case['cover']['path']
+        self.s3.seed('a-case/A Case.png', path.read_bytes(), self.base)
+        previous = path.stat()
+        self.change('cover'); os.utime(path, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+        self.commit()
+        self.apply(self.plan())
+        self.assertEqual(self.uploads(), ['a-case/A Case.png'])
+        self.assertEqual(self.s3.objects['a-case/A Case.png']['body'], path.read_bytes())
+
+    def test_new_directory_uploads_its_resources_and_manifest_last(self):
+        self.add_case('New Case', 'new-case'); self.write_manifest(); self.commit()
+        self.apply(self.plan())
+        self.assertEqual(self.uploads(), ['new-case/New Case.png', 'new-case/New Case.science',
+                                         'new-case/New Case.md', 'manifest.json'])
+
+    def test_empty_diff_skips_s3_and_missing_historical_files(self):
+        self.commit()
+        (self.root / self.case['cover']['path']).unlink()
+        plan = self.plan()
+        self.assertEqual(plan['files'], [])
+        self.assertEqual(self.s3.calls, [])
+
+    def test_only_changed_manifest_does_not_read_historical_resources(self):
+        self.case['title'] = 'Metadata change'; self.write_manifest(); self.commit()
+        (self.root / self.case['case']['path']).unlink()
+        with patch.object(publisher, 'digest', wraps=publisher.digest) as digest:
+            self.apply(self.plan())
+        self.assertTrue(all(call.args[0].name == 'manifest.json' for call in digest.call_args_list))
+        self.assertEqual(self.uploads(), ['manifest.json'])
+
+    def test_unlisted_changed_files_are_ignored(self):
+        (self.root / 'README.md').write_text('not published')
+        (self.root / 'A Case/unlisted.txt').write_text('not published')
+        self.commit()
+        self.assertEqual(self.plan()['files'], [])
+        self.assertEqual(self.s3.calls, [])
+
+    def test_known_same_s3_content_skips_upload_and_advances_version_tag(self):
+        path = self.change('cover'); after = self.commit()
+        self.s3.seed('a-case/A Case.png', path.read_bytes(), self.base)
+        self.s3.objects['a-case/A Case.png']['tags'] = [{'Key': 'owner', 'Value': 'retained'}]
+        plan = self.plan()
+        self.assertEqual(plan['files'], [])
+        publisher.record_matches(self.root, plan, self.s3)
         self.assertEqual(self.uploads(), [])
-        self.assertEqual(self.requests, [])
+        self.assertNotIn(('get', 'a-case/A Case.png'), self.s3.calls)
+        self.assertEqual(self.s3.objects['a-case/A Case.png']['tags'], [
+            {'Key': 'owner', 'Value': 'retained'}, {'Key': 'open-science-commit', 'Value': after}])
 
-    def test_apply_uses_prepared_plan_and_rejects_content_changes_after_preparation(self):
-        base = self.baseline()
-        path = self.root / self.case["cover"]["path"]
-        path.write_bytes(b"x" * path.stat().st_size)
-        plan = self.root / "plan.json"
-        result = self.run_publish("--base", base, "--prepare", str(plan))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        path.write_bytes(b"y" * path.stat().st_size)
-        result = self.run_publish("--apply-plan", str(plan))
-        self.assertNotEqual(result.returncode, 0)
+    def test_manual_s3_object_without_checksum_is_compared_only_for_candidate(self):
+        path = self.change('cover'); self.commit()
+        self.s3.seed('a-case/A Case.png', path.read_bytes(), checksum=False)
+        self.assertEqual(self.plan()['files'], [])
+        self.assertEqual([call for call in self.s3.calls if call[0] == 'get'], [('get', 'a-case/A Case.png')])
+
+    def test_unknown_same_size_s3_content_is_not_assumed_equal(self):
+        path = self.change('cover'); self.commit()
+        self.s3.seed('a-case/A Case.png', b'z' * path.stat().st_size, checksum=False)
+        self.apply(self.plan())
+        self.assertEqual(self.uploads(), ['a-case/A Case.png'])
+
+    def test_continuous_pushes_keep_distinct_files_and_prevent_old_overwrite(self):
+        self.change('cover'); first = self.commit()
+        first_plan = self.plan(after=first)
+        self.change('cover', b'y' * 11); self.change('introduction'); second = self.commit()
+        self.apply(self.plan(before=first, after=second))
+        self.s3.calls.clear()
+        self.git('checkout', '--detach', first)
+        self.apply(first_plan)
+        self.assertEqual(self.uploads(), [])
+        self.assertEqual(self.s3.objects['a-case/A Case.png']['body'], b'y' * 11)
+
+    def test_earlier_push_still_uploads_distinct_file_after_newer_push(self):
+        self.change('cover'); first = self.commit()
+        self.change('introduction'); second = self.commit()
+        self.apply(self.plan(before=first, after=second))
+        self.s3.calls.clear()
+        self.git('checkout', '--detach', first)
+        self.apply(self.plan(after=first))
+        self.assertEqual(self.uploads(), ['a-case/A Case.png'])
+
+    def test_same_content_newer_push_cannot_be_overwritten_by_old_retry(self):
+        original = (self.root / self.case['cover']['path']).read_bytes()
+        self.s3.seed('a-case/A Case.png', original, self.base)
+        self.change('cover'); first = self.commit()
+        self.change('cover', original); second = self.commit()
+        plan = self.plan(before=first, after=second)
+        self.assertEqual(plan['files'], [])
+        publisher.record_matches(self.root, plan, self.s3)
+        self.git('checkout', '--detach', first)
+        self.apply(self.plan(after=first))
+        self.assertEqual(self.uploads(), [])
+        self.assertEqual(self.s3.objects['a-case/A Case.png']['body'], original)
+
+    def test_failure_retry_uses_original_range_and_keeps_manifest_last(self):
+        self.change('cover'); self.change('introduction')
+        self.case['title'] = 'Changed'; self.write_manifest(); after = self.commit()
+        plan = self.plan()
+        self.s3.fail_key = 'a-case/A Case.md'
+        with self.assertRaisesRegex(ValueError, 'Simulated'):
+            self.apply(plan)
+        self.assertNotIn('manifest.json', self.uploads())
+        self.s3.fail_key = None; self.s3.calls.clear()
+        self.apply(plan)
+        self.assertEqual(plan['after'], after)
+        self.assertEqual(self.uploads(), ['a-case/A Case.md', 'manifest.json'])
+
+    def test_unknown_or_zero_range_is_error_without_s3_access(self):
+        for before in ('', 'HEAD^', '0' * 40, 'f' * 40):
+            with self.subTest(before=before), self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                publisher.prepare(self.root, before, self.base, self.s3)
+        self.assertEqual(self.s3.calls, [])
+
+    def test_checkout_must_match_original_after_even_if_branch_has_advanced(self):
+        self.change('cover'); after = self.commit()
+        self.change('introduction'); self.commit()
+        with self.assertRaisesRegex(ValueError, 'checkout'):
+            self.plan(after=after)
+        self.git('checkout', '--detach', after)
+        self.assertEqual([item['key'] for item in self.plan(after=after)['files']], ['a-case/A Case.png'])
+
+    def test_plan_rejects_changed_local_bytes_before_any_upload(self):
+        self.change('cover'); self.commit(); plan = self.plan()
+        self.change('cover', b'z' * 11)
+        with self.assertRaisesRegex(ValueError, 'checkout|changed'):
+            self.apply(plan)
         self.assertEqual(self.uploads(), [])
 
-    def test_prepared_plan_uploads_only_changed_files_and_changed_manifest_last(self):
-        base = self.baseline()
-        path = self.root / self.case["cover"]["path"]
-        path.write_bytes(b"x" * path.stat().st_size)
-        self.case["title"] = "Updated title"
-        plan = self.root / "plan.json"
-        output = self.root / "output"
-        self.env["GITHUB_OUTPUT"] = str(output)
-        result = self.run_publish("--base", base, "--prepare", str(plan))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("has_uploads=true\n", output.read_text())
-        self.assertNotIn("test-bucket", output.read_text())
-        self.assertEqual(self.uploads(), [])
-        result = self.run_publish("--apply-plan", str(plan))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([call[3] for call in self.uploads()], [
-            "s3://test-bucket/cases/a-test-case/A Test—Case.png",
-            "s3://test-bucket/cases/manifest.json",
-        ])
-        self.assertEqual((self.objects / "test-bucket/cases/a-test-case/A Test—Case.png").read_bytes(),
-                         path.read_bytes())
-
-    def test_readme_change_has_no_uploads(self):
-        base = self.baseline()
-        (self.root / "A Test Case" / "README.md").write_text("Documentation only")
-        result = self.run_publish("--base", base)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.uploads(), [])
-
-    def test_removed_case_updates_manifest_without_deleting_s3_objects(self):
-        base = self.baseline()
-        self.assertEqual(self.run_publish().returncode, 0)
-        self.calls.unlink()
-        (self.root / "manifest.json").write_text("[]")
-        result = subprocess.run([sys.executable, str(SCRIPT), "--base", base],
-                                cwd=self.root, env=self.env, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([call[3] for call in self.uploads()], ["s3://test-bucket/cases/manifest.json"])
-        self.assertTrue((self.objects / "test-bucket/cases/a-test-case/A Test—Case.png").is_file())
-
-    def test_invalid_baseline_fails_before_uploading(self):
-        self.baseline()
-        result = self.run_publish("--base", "f" * 40)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.uploads(), [])
-
-    def test_remote_url_change_updates_manifest_without_uploading_remote_package(self):
-        self.remote()
-        (self.root / self.case["case"]["path"]).unlink()
-        base = self.baseline()
-        self.case["case"]["release_url"] += "?v=2"
-        result = self.run_publish("--base", base)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([call[3] for call in self.uploads()], ["s3://test-bucket/cases/manifest.json"])
-        self.assertEqual(self.requests, [("HEAD", "/redirect?v=2")])
-
-    def test_retry_includes_changes_since_successful_baseline(self):
-        base = self.baseline()
-        cover = self.root / self.case["cover"]["path"]
-        cover.write_bytes(b"x" * cover.stat().st_size)
-        self.env["UPLOAD_EXIT"] = "1"
-        result = self.run_publish("--base", base)
-        self.assertNotEqual(result.returncode, 0)
-        self.calls.unlink()
-        del self.env["UPLOAD_EXIT"]
-        intro = self.root / self.case["introduction"]["path"]
-        intro.write_bytes(b"y" * intro.stat().st_size)
-        result = self.run_publish("--base", base)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([call[3] for call in self.uploads()], [
-            "s3://test-bucket/cases/a-test-case/A Test—Case.png",
-            "s3://test-bucket/cases/a-test-case/A Test—Case.md",
-        ])
-
-    def remote(self, status=200, etag='"remote-tag"'):
-        self.requests = []
-        requests = self.requests
-
+    def test_changed_remote_package_uses_only_head(self):
+        requests = []
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_HEAD(self):
-                requests.append(("HEAD", self.path))
-                if self.path == "/redirect":
-                    self.send_response(302)
-                    self.send_header("Location", "/asset")
-                else:
-                    self.send_response(status)
-                    self.send_header("Content-Length", "681599670")
-                    self.send_header("Content-Type", "application/octet-stream")
-                    self.send_header("ETag", etag)
-                self.end_headers()
-
+                requests.append('HEAD'); self.send_response(200); self.end_headers()
             def do_GET(self):
-                requests.append(("GET", self.path))
-                self.send_error(500, "GET is forbidden")
-
+                requests.append('GET'); self.send_error(500)
             def log_message(self, *args):
                 pass
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        self.addCleanup(server.server_close); self.addCleanup(thread.join); self.addCleanup(server.shutdown)
+        (self.root / self.case['case']['path']).unlink()
+        self.case['case']['release_url'] = 'http://127.0.0.1:%s/asset.science' % server.server_port
+        self.write_manifest(); self.commit()
+        self.apply(self.plan())
+        self.assertEqual(requests, ['HEAD'])
+        self.assertEqual(self.uploads(), ['manifest.json'])
 
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(thread.join)
-        self.addCleanup(server.shutdown)
-        self.case["case"]["release_url"] = "http://127.0.0.1:%s/redirect" % server.server_port
-
-    def test_uploads_manifest_resources_under_name_with_original_filenames(self):
-        result = self.run_publish()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual({call[3] for call in self.uploads()}, {
-            "s3://test-bucket/cases/a-test-case/A Test—Case.png",
-            "s3://test-bucket/cases/a-test-case/A Test—Case.science",
-            "s3://test-bucket/cases/a-test-case/A Test—Case.md",
-            "s3://test-bucket/cases/manifest.json",
-        })
-        for call in self.uploads():
-            self.assertEqual(call[:2], ["s3", "cp"])
-            self.assertTrue(Path(call[2]).is_file())
-
-    def test_remote_resource_uses_head_even_after_redirect_and_never_uploads(self):
-        self.remote()
-        (self.root / self.case["case"]["path"]).unlink()
-        result = self.run_publish()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.requests, [("HEAD", "/redirect"), ("HEAD", "/asset")])
-        self.assertEqual(len(self.uploads()), 3)
-        self.assertFalse(any(call[3].endswith(".science") for call in self.uploads()))
-        self.assertIn("681599670", result.stdout)
-        self.assertIn("remote-tag", result.stdout)
-
-    def test_local_file_and_release_url_together_block_publish_without_head(self):
-        self.remote()
-        result = self.run_publish()
+    def test_cli_requires_explicit_range_and_has_no_full_sync_fallback(self):
+        result = subprocess.run([sys.executable, str(SCRIPT), '--dry-run'], cwd=self.root,
+                                capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("both", result.stderr)
-        self.assertEqual(self.requests, [])
-        self.assertEqual(self.uploads(), [])
 
-    def test_missing_local_file_and_empty_release_url_block_publish(self):
-        (self.root / self.case["case"]["path"]).unlink()
-        for release_url in ("", " "):
-            with self.subTest(release_url=release_url):
-                self.case["case"]["release_url"] = release_url
-                result = self.run_publish()
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("neither", result.stderr)
-                self.assertEqual(self.uploads(), [])
+    def test_cli_prepares_skips_and_retries_with_real_s3_command_arguments(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Path(directory)
+            binary = store / 'aws'
+            fake = SCRIPT.parents[1] / 'tests/fake_s3.py'
+            binary.write_text('#!' + sys.executable + '\n' + fake.read_text())
+            binary.chmod(0o755)
+            output = store / 'output'
+            plan_path = store / 'plan.json'
+            env = dict(os.environ, PATH=str(store) + os.pathsep + os.environ['PATH'],
+                       FAKE_S3_ROOT=str(store), AWS_TARGET_FOLDER='s3://bucket/prefix',
+                       GITHUB_OUTPUT=str(output))
+            self.change('cover'); after = self.commit()
+            def run(*args):
+                result = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.root,
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                return result
+            run('--before', self.base, '--after', after, '--prepare', str(plan_path))
+            self.assertIn('has_uploads=true\n', output.read_text())
+            self.assertNotIn('s3://bucket', output.read_text())
+            self.assertFalse((store / 'bucket').exists())
+            run('--apply-plan', str(plan_path))
+            target = store / 'bucket/prefix/a-case/A Case.png'
+            self.assertEqual(target.read_bytes(), b'x' * 11)
+            self.assertEqual(json.loads(target.with_name(target.name + '.meta').read_text())['source-commit'], after)
+            output.write_text('')
+            run('--before', self.base, '--after', after, '--prepare', str(plan_path))
+            self.assertIn('has_uploads=false\n', output.read_text())
+            calls = [json.loads(line) for line in (store / 'calls.jsonl').read_text().splitlines()]
+            self.assertEqual(sum(call[:2] == ['s3', 'cp'] for call in calls), 1)
+            # Removing the checksum emulates a manually synchronized object.
+            target.with_name(target.name + '.meta').write_text('{}')
+            run('--before', self.base, '--after', after, '--prepare', str(plan_path))
+            self.assertEqual(json.loads(plan_path.read_text())['files'], [])
 
-    def test_non_utf8_head_headers_do_not_block_local_uploads(self):
-        self.remote(etag='"caf\xe9\x85"')
-        (self.root / self.case["case"]["path"]).unlink()
-        result = self.run_publish()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.requests, [("HEAD", "/redirect"), ("HEAD", "/asset")])
-        self.assertEqual(len(self.uploads()), 3)
-        metadata = json.loads(result.stdout.split("\n")[0])
-        self.assertEqual(metadata["headers"]["etag"], '"caf\xe9\x85"')
+    def test_manifest_from_older_retry_cannot_replace_newer_manifest(self):
+        self.change('cover'); self.case['title'] = 'First'; self.write_manifest(); first = self.commit()
+        first_plan = self.plan(after=first)
+        self.change('introduction'); self.case['title'] = 'Second'; self.write_manifest(); second = self.commit()
+        self.apply(self.plan(before=first, after=second))
+        latest_manifest = self.s3.objects['manifest.json']['body']
+        self.s3.calls.clear(); self.git('checkout', '--detach', first)
+        self.apply(first_plan)
+        self.assertEqual(self.uploads(), ['a-case/A Case.png'])
+        self.assertEqual(self.s3.objects['manifest.json']['body'], latest_manifest)
 
-    def test_head_failure_does_not_fall_back_to_get_or_block_local_uploads(self):
-        self.remote(status=405)
-        (self.root / self.case["case"]["path"]).unlink()
-        result = self.run_publish()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.requests, [("HEAD", "/redirect"), ("HEAD", "/asset")])
-        self.assertEqual(len(self.uploads()), 3)
-        self.assertIn("HEAD unavailable", result.stdout)
-        self.assertIn(self.case["case"]["sha256"], result.stdout)
-
-    def test_missing_optional_introduction_is_allowed(self):
-        del self.case["introduction"]
-        result = self.run_publish()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(self.uploads()), 3)
-
-    def test_manifest_is_uploaded_to_target_root_after_all_resources(self):
-        result = self.run_publish()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.uploads()[-1][3], "s3://test-bucket/cases/manifest.json")
-        self.assertEqual((self.objects / "test-bucket/cases/manifest.json").read_bytes(),
-                         (self.root / "manifest.json").read_bytes())
-
-    def test_republish_replaces_same_size_file_and_manifest_with_latest_bytes(self):
-        result = self.run_publish()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((self.objects / "test-bucket/cases/manifest.json").is_file())
-        path = self.root / self.case["introduction"]["path"]
-        previous = path.stat()
-        content = b"x" * previous.st_size
-        path.write_bytes(content)
-        os.utime(path, ns=(previous.st_atime_ns, previous.st_mtime_ns))
-        self.case["introduction"]["sha256"] = hashlib.sha256(content).hexdigest()
-        result = self.run_publish()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.objects / "test-bucket/cases/a-test-case/A Test—Case.md").read_bytes(), content)
-        self.assertEqual((self.objects / "test-bucket/cases/manifest.json").read_bytes(),
-                         (self.root / "manifest.json").read_bytes())
-
-    def test_failed_republish_leaves_previous_manifest_in_place(self):
-        result = self.run_publish()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        remote_manifest = self.objects / "test-bucket/cases/manifest.json"
-        self.assertTrue(remote_manifest.is_file())
-        previous = remote_manifest.read_bytes()
-        self.case["title"] = "Updated title"
-        self.env["UPLOAD_EXIT"] = "1"
-        result = self.run_publish()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(remote_manifest.read_bytes(), previous)
-
-    def test_invalid_local_resource_blocks_all_uploads(self):
-        (self.root / self.case["introduction"]["path"]).write_bytes(b"corrupt")
-        result = self.run_publish()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("mismatch", result.stderr)
-        self.assertEqual(self.uploads(), [])
-
-    def test_duplicate_or_invalid_names_block_uploads(self):
-        for cases in [[self.case, self.case], [dict(self.case, name="../outside")]]:
-            with self.subTest(cases=cases):
-                result = self.run_publish(cases=cases)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(self.uploads(), [])
-
-    def test_dry_run_validates_without_uploading(self):
-        result = self.run_publish("--dry-run")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("a-test-case/A Test—Case.md", result.stdout)
-        self.assertEqual(self.uploads(), [])
-
-    def test_invalid_s3_target_blocks_uploads(self):
-        self.env["AWS_TARGET_FOLDER"] = "missing-bucket/prefix"
-        result = self.run_publish()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("AWS_TARGET_FOLDER", result.stderr)
-        self.assertEqual(self.uploads(), [])
-
-    def test_upload_failure_fails_publish_and_stops(self):
-        self.env["UPLOAD_EXIT"] = "1"
-        result = self.run_publish()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(len(self.uploads()), 1)
+    def test_s3_errors_other_than_not_found_fail_closed(self):
+        s3 = publisher.S3('s3://bucket/prefix')
+        for message in ('AccessDenied', 'connection timed out'):
+            result = subprocess.CompletedProcess([], 1, '', message)
+            with patch.object(publisher.subprocess, 'run', return_value=result), self.assertRaises(ValueError):
+                s3.head('file.png')
+        result = subprocess.CompletedProcess([], 1, '', 'An error occurred (404) when calling HeadObject')
+        with patch.object(publisher.subprocess, 'run', return_value=result):
+            self.assertIsNone(s3.head('file.png'))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()
