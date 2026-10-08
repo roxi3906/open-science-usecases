@@ -1,0 +1,38 @@
+name: Check case structure
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  check-structure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the proposed tree and history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect case changes and check affected directories
+        id: directories
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 .github/scripts/check_structure.py directories --base "$BASE_SHA" --merge-base
+
+      - name: Test the checker
+        if: steps.directories.outputs.cases != '[]'
+        run: python3 -B -m unittest discover -s .github/tests -v
+
+      - name: Check matching manifest entries
+        if: steps.directories.outputs.cases != '[]'
+        env:
+          CASES_JSON: ${{ steps.directories.outputs.cases }}
+          CASE_FILE_BASE_URL: https://raw.githubusercontent.com/${{ github.event.pull_request.head.repo.full_name }}/${{ github.event.pull_request.head.sha }}
+        run: python3 .github/scripts/check_structure.py manifest
