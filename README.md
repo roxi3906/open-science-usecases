@@ -24,28 +24,3 @@ URL-safe `name`, plus nested `cover`, `case`, and (when available)
 SHA-256 checksum, and relative path. The `.science` resource also has a
 `release_url`, which is empty when the case is stored in this repository. The
 root README and per-case README files are not included as introductions.
-
-## Publishing
-
-After `Check case structure` succeeds for a push to `main`, the `publish`
-workflow prepares a file list before starting its upload job. Existing name,
-path, and new-directory checks remain in the structure workflow. The publisher
-compares each local resource's content and destination against the last actual
-successful publication, including changes that preserve file size and timestamps.
-Only new or changed resources are uploaded; `manifest.json` is uploaded last
-and only when it changes. An empty list marks the `publish` job as skipped.
-Remote `.science` packages are inspected with HEAD only and are never uploaded.
-
-The first publication, missing publication history, and recovery after a failed
-upload use a full file list. Rerunning a workflow also forces a full publication,
-including when only failed jobs are rerun. Use **Re-run all jobs** on the current
-main publication after changing `AWS_TARGET_FOLDER` or restoring missing S3
-objects. Publication history identifies the checked commit in the run title;
-the upload step name `Publish local resources to S3` is used to distinguish
-actual uploads from skipped jobs. Keep these identifiers in sync with
-`.github/scripts/publication_base.py` when changing the workflow.
-
-Uploads retain the existing S3 layout and AWS secrets. No S3 read permission is
-needed for incremental comparison, and old or unrelated objects are not deleted.
-Uploads are not transactional: a failure can leave some resources replaced,
-which is why the next attempt restores all current resources before the manifest.
