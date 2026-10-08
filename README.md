@@ -24,3 +24,56 @@ URL-safe `name`, plus nested `cover`, `case`, and (when available)
 SHA-256 checksum, and relative path. The `.science` resource also has a
 `release_url`, which is empty when the case is stored in this repository. The
 root README and per-case README files are not included as introductions.
+
+## Adding a case
+
+The `Check case structure` GitHub Actions workflow checks new top-level case
+directories on pull requests and branch pushes. Existing directories are not
+revalidated, and dot-prefixed tooling directories (such as `.github`) are ignored.
+A directory rename counts as a new directory. Pull requests compare against the
+common ancestor with the base branch; pushes compare against the previous commit.
+The first push to a new feature branch compares against the common ancestor
+with the default branch. Only the initial push of the default branch compares
+against an empty tree.
+
+For a directory named `My New Case`, include:
+
+- `My New Case.md` and `My New Case.png`.
+- Either `My New Case.science`, or a `README.md` containing an absolute HTTP(S)
+  download link whose URL path ends in `.science`. Query strings and fragments
+  are allowed. Use percent-encoding for spaces and parentheses in the URL.
+
+Add exactly one matching entry in `manifest.json`. Its `title` must equal the
+directory name, and its `name` must be the ASCII kebab-case form (`my-new-case`).
+The conversion separates camel-case words, folds accented Latin characters,
+lowercases letters, and replaces punctuation/whitespace with hyphens.
+
+New entries require exactly `title`, `name`, `cover`, `case`, and `introduction`.
+Each resource requires `file_name`, `path`, `bytes` (a nonnegative integer), and
+`sha256` (64 lowercase hexadecimal characters). Filenames and paths must refer
+to the corresponding same-named files in the case directory. Local byte sizes
+and SHA-256 checksums must match the actual files. Symlinks are not accepted.
+
+The `case` object additionally requires `release_url`: use an empty string for a
+local `.science` file, or an exact matching download link from the case README
+for a remotely hosted file. Keep `file_name` and `path` even when the file is
+hosted remotely. Remote sizes and checksums are checked for format only; the
+workflow does not download release assets. A README does not replace the required
+same-named introduction Markdown for new cases.
+
+The directory step exports a JSON array through `GITHUB_OUTPUT` as `cases`,
+including each directory's name, validity, local-file presence, and parsed
+download URLs. The manifest step receives it through the `CASES_JSON` environment
+variable. Any validation error fails the workflow and identifies the directory
+or field in the logs.
+
+To reproduce the checks locally after committing the proposed case files, run
+from the repository root with Python 3.9 or later:
+
+```bash
+python3 -B -m unittest discover -s .github/tests -v
+CASES_JSON="$(python3 .github/scripts/check_structure.py directories --base origin/main --merge-base)" &&
+  CASES_JSON="$CASES_JSON" python3 .github/scripts/check_structure.py manifest
+```
+
+Use `--base <previous-commit>` without `--merge-base` to reproduce a push check.
