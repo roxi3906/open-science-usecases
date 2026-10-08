@@ -1,6 +1,9 @@
 name: Check case structure
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
@@ -15,16 +18,21 @@ jobs:
       - name: Check out the proposed tree and history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Detect case changes and check affected directories
         id: directories
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          python3 .github/scripts/check_structure.py directories --base "$BASE_SHA" --merge-base
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            python3 .github/scripts/check_structure.py directories --base "$BASE_SHA" --merge-base
+          else
+            python3 .github/scripts/check_structure.py directories --base "$BASE_SHA"
+          fi
 
       - name: Test the checker
         if: steps.directories.outputs.cases != '[]'
@@ -34,5 +42,5 @@ jobs:
         if: steps.directories.outputs.cases != '[]'
         env:
           CASES_JSON: ${{ steps.directories.outputs.cases }}
-          CASE_FILE_BASE_URL: https://raw.githubusercontent.com/${{ github.event.pull_request.head.repo.full_name }}/${{ github.event.pull_request.head.sha }}
+          CASE_FILE_BASE_URL: https://raw.githubusercontent.com/${{ github.event.pull_request.head.repo.full_name || github.repository }}/${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 .github/scripts/check_structure.py manifest
