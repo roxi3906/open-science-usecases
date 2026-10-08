@@ -2,6 +2,7 @@
 """Publish local resources and manifest to S3; inspect remote resources with HEAD only."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,12 +12,36 @@ import sys
 from urllib.parse import urlsplit
 
 
-def publication_plan(root, target):
-    destination = urlsplit(target)
-    if (destination.scheme != "s3" or not destination.netloc
-            or destination.query or destination.fragment):
-        raise ValueError("AWS_TARGET_FOLDER must be an s3://bucket[/prefix] URI")
-    target = target.rstrip("/")
+def git(root, *args):
+    return subprocess.check_output(["git", *args], cwd=root).decode("utf-8").strip()
+
+
+def baseline_resources(root, base):
+    # Compare Git objects, not optional manifest checksums or file timestamps.
+    tree = {}
+    for record in git(root, "ls-tree", "-r", "-z", base).split("\0"):
+        if record:
+            metadata, path = record.split("\t", 1)
+            tree[path] = metadata.split()[2]
+    cases = json.loads(git(root, "show", base + ":manifest.json")) if "manifest.json" in tree else []
+    resources = {"manifest.json": tree.get("manifest.json")}
+    for case in cases:
+        for key in ("cover", "case", "introduction"):
+            resource = case.get(key)
+            if resource and resource["path"] in tree:
+                resources[case["name"] + "/" + resource["file_name"]] = tree[resource["path"]]
+    return resources, {case["name"]: case for case in cases}
+
+
+def publication_plan(root, target=None, base=None):
+    prefix = ""
+    if target is not None:
+        destination = urlsplit(target)
+        if (destination.scheme != "s3" or not destination.netloc
+                or destination.query or destination.fragment):
+            raise ValueError("AWS_TARGET_FOLDER must be an s3://bucket[/prefix] URI")
+        prefix = target.rstrip("/") + "/"
+    previous, old_cases = baseline_resources(root, base) if base else ({}, {})
     cases = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     uploads, remote, names = [], [], set()
     for case in cases:
@@ -47,15 +72,34 @@ def publication_plan(root, target):
                 elif not release_url.strip():
                     raise ValueError("Found neither a local .science nor a release_url: " + name)
                 else:
-                    remote.append((name, resource))
+                    if resource != old_cases.get(name, {}).get("case"):
+                        remote.append((name, resource))
                     continue
             if path.stat().st_size != resource["bytes"]:
                 raise ValueError("Size mismatch: " + str(relative))
             # Match the structure checker: sha256 is optional, unvalidated metadata.
-            uploads.append((path, target + "/" + name + "/" + filename))
+            uploads.append((path, name + "/" + filename))
     # Publish the index only after every resource upload has succeeded.
-    uploads.append((root / "manifest.json", target + "/manifest.json"))
-    return uploads, remote
+    uploads.append((root / "manifest.json", "manifest.json"))
+    if base:
+        uploads = [(path, key) for path, key in uploads
+                   if previous.get(key) != git(root, "hash-object", "--", str(path))]
+    return [(path, prefix + key) for path, key in uploads], remote
+
+
+def prepared_plan(root, base):
+    uploads, remote = publication_plan(root, base=base)
+    files = []
+    for path, key in uploads:
+        # Bind the cross-job plan to the bytes it approved, including uncommitted
+        # edits during local dry runs. Never put the secret S3 target in outputs.
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        files.append({"path": str(path.relative_to(root)), "key": key, "sha256": digest.hexdigest()})
+    return {"commit": git(root, "rev-parse", "HEAD"), "base": base, "files": files,
+            "remote": [[name, resource] for name, resource in remote]}
 
 
 def inspect_remote(name, resource):
@@ -94,15 +138,38 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true",
                         help="Validate local files and query remote HEAD metadata without uploading")
+    parser.add_argument("--base", help="Last successfully published commit; omit for a full publication")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--prepare", type=Path, help="Save a plan and Actions outputs without network access")
+    mode.add_argument("--apply-plan", type=Path, help="Upload exactly the previously prepared plan")
     args = parser.parse_args()
-    uploads, remote = publication_plan(Path.cwd().resolve(), os.environ.get("AWS_TARGET_FOLDER", ""))
+    root = Path.cwd().resolve()
+    if args.prepare:
+        plan = prepared_plan(root, args.base or None)
+        payload = json.dumps(plan, ensure_ascii=True, separators=(",", ":"))
+        args.prepare.write_text(payload + "\n", encoding="utf-8")
+        output = os.environ.get("GITHUB_OUTPUT")
+        if output:
+            with open(output, "a", encoding="utf-8") as stream:
+                stream.write("has_uploads=" + str(bool(plan["files"])).lower() + "\n")
+                stream.write("plan=" + payload + "\n")
+        for item in plan["files"]:
+            print("Upload/replace: " + item["key"])
+        print("Prepared {} files.".format(len(plan["files"])))
+        return
+    if args.apply_plan:
+        plan = json.loads(args.apply_plan.read_text(encoding="utf-8"))
+        if plan != prepared_plan(root, plan["base"]):
+            raise ValueError("Prepared publication no longer matches the checkout; prepare it again")
+        args.base = plan["base"]
+    uploads, remote = publication_plan(root, os.environ.get("AWS_TARGET_FOLDER", ""), args.base or None)
     for name, resource in remote:
         inspect_remote(name, resource)
     for path, destination in uploads:
         if args.dry_run:
             print("Would upload: " + destination)
         else:
-            # Copy every file on every run, including same-size content changes.
+            # Only planned files are replaced; the changed manifest stays last.
             subprocess.run(["aws", "s3", "cp", str(path), destination, "--only-show-errors"], check=True)
     print("{} {} local files; skipped {} remote resources.".format(
         "Validated" if args.dry_run else "Uploaded", len(uploads), len(remote)))

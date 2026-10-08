@@ -1,4 +1,5 @@
 import hashlib
+import copy
 import http.server
 import json
 import os
@@ -61,6 +62,175 @@ class PublishTests(unittest.TestCase):
 
     def uploads(self):
         return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
+
+    def git(self, *args):
+        return subprocess.check_output(["git", *args], cwd=self.root, text=True).strip()
+
+    def baseline(self, cases=None):
+        # Use real Git blobs so equal-size edits cannot hide behind file metadata.
+        (self.root / "manifest.json").write_text(json.dumps(cases or [self.case]))
+        self.git("init", "-q")
+        self.git("config", "user.email", "test@example.com")
+        self.git("config", "user.name", "Test")
+        self.git("add", "manifest.json", "A Test Case")
+        self.git("commit", "-qm", "test: baseline")
+        return self.git("rev-parse", "HEAD")
+
+    def test_unchanged_publication_has_no_uploads(self):
+        base = self.baseline()
+        result = self.run_publish("--base", base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.uploads(), [])
+
+    def test_content_only_change_replaces_just_one_same_size_file(self):
+        base = self.baseline()
+        path = self.root / self.case["introduction"]["path"]
+        previous = path.stat()
+        path.write_bytes(b"x" * previous.st_size)
+        os.utime(path, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+        result = self.run_publish("--base", base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call[3] for call in self.uploads()], [
+            "s3://test-bucket/cases/a-test-case/A Test—Case.md",
+        ])
+
+    def test_manifest_only_change_does_not_reupload_resources(self):
+        base = self.baseline()
+        self.case["title"] = "Updated title"
+        result = self.run_publish("--base", base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call[3] for call in self.uploads()], [
+            "s3://test-bucket/cases/manifest.json",
+        ])
+
+    def test_new_directory_uploads_only_new_resources_then_manifest(self):
+        base = self.baseline()
+        new_case = copy.deepcopy(self.case)
+        new_case.update(name="new-case", title="New Case")
+        for key, suffix in [("cover", "png"), ("case", "science"), ("introduction", "md")]:
+            path = self.root / "New Case" / ("New Case." + suffix)
+            path.parent.mkdir(exist_ok=True)
+            path.write_bytes((self.root / self.case[key]["path"]).read_bytes())
+            new_case[key].update(file_name=path.name, path=str(path.relative_to(self.root)))
+        result = self.run_publish("--base", base, cases=[self.case, new_case])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call[3] for call in self.uploads()], [
+            "s3://test-bucket/cases/new-case/New Case.png",
+            "s3://test-bucket/cases/new-case/New Case.science",
+            "s3://test-bucket/cases/new-case/New Case.md",
+            "s3://test-bucket/cases/manifest.json",
+        ])
+
+    def test_renamed_destination_uploads_even_when_contents_are_identical(self):
+        base = self.baseline()
+        self.case["introduction"]["file_name"] = "Renamed.md"
+        result = self.run_publish("--base", base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call[3] for call in self.uploads()], [
+            "s3://test-bucket/cases/a-test-case/Renamed.md",
+            "s3://test-bucket/cases/manifest.json",
+        ])
+
+    def test_prepare_exports_empty_plan_without_aws_credentials_or_remote_head(self):
+        self.remote()
+        (self.root / self.case["case"]["path"]).unlink()
+        base = self.baseline()
+        self.env.pop("AWS_TARGET_FOLDER")
+        output = self.root / "output"
+        self.env["GITHUB_OUTPUT"] = str(output)
+        result = self.run_publish("--base", base, "--prepare", str(self.root / "plan.json"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads((self.root / "plan.json").read_text())
+        self.assertEqual(plan["files"], [])
+        self.assertIn("has_uploads=false\n", output.read_text())
+        self.assertEqual(self.uploads(), [])
+        self.assertEqual(self.requests, [])
+
+    def test_apply_uses_prepared_plan_and_rejects_content_changes_after_preparation(self):
+        base = self.baseline()
+        path = self.root / self.case["cover"]["path"]
+        path.write_bytes(b"x" * path.stat().st_size)
+        plan = self.root / "plan.json"
+        result = self.run_publish("--base", base, "--prepare", str(plan))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        path.write_bytes(b"y" * path.stat().st_size)
+        result = self.run_publish("--apply-plan", str(plan))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.uploads(), [])
+
+    def test_prepared_plan_uploads_only_changed_files_and_changed_manifest_last(self):
+        base = self.baseline()
+        path = self.root / self.case["cover"]["path"]
+        path.write_bytes(b"x" * path.stat().st_size)
+        self.case["title"] = "Updated title"
+        plan = self.root / "plan.json"
+        output = self.root / "output"
+        self.env["GITHUB_OUTPUT"] = str(output)
+        result = self.run_publish("--base", base, "--prepare", str(plan))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("has_uploads=true\n", output.read_text())
+        self.assertNotIn("test-bucket", output.read_text())
+        self.assertEqual(self.uploads(), [])
+        result = self.run_publish("--apply-plan", str(plan))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call[3] for call in self.uploads()], [
+            "s3://test-bucket/cases/a-test-case/A Test—Case.png",
+            "s3://test-bucket/cases/manifest.json",
+        ])
+        self.assertEqual((self.objects / "test-bucket/cases/a-test-case/A Test—Case.png").read_bytes(),
+                         path.read_bytes())
+
+    def test_readme_change_has_no_uploads(self):
+        base = self.baseline()
+        (self.root / "A Test Case" / "README.md").write_text("Documentation only")
+        result = self.run_publish("--base", base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.uploads(), [])
+
+    def test_removed_case_updates_manifest_without_deleting_s3_objects(self):
+        base = self.baseline()
+        self.assertEqual(self.run_publish().returncode, 0)
+        self.calls.unlink()
+        (self.root / "manifest.json").write_text("[]")
+        result = subprocess.run([sys.executable, str(SCRIPT), "--base", base],
+                                cwd=self.root, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call[3] for call in self.uploads()], ["s3://test-bucket/cases/manifest.json"])
+        self.assertTrue((self.objects / "test-bucket/cases/a-test-case/A Test—Case.png").is_file())
+
+    def test_invalid_baseline_fails_before_uploading(self):
+        self.baseline()
+        result = self.run_publish("--base", "f" * 40)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.uploads(), [])
+
+    def test_remote_url_change_updates_manifest_without_uploading_remote_package(self):
+        self.remote()
+        (self.root / self.case["case"]["path"]).unlink()
+        base = self.baseline()
+        self.case["case"]["release_url"] += "?v=2"
+        result = self.run_publish("--base", base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call[3] for call in self.uploads()], ["s3://test-bucket/cases/manifest.json"])
+        self.assertEqual(self.requests, [("HEAD", "/redirect?v=2")])
+
+    def test_retry_includes_changes_since_successful_baseline(self):
+        base = self.baseline()
+        cover = self.root / self.case["cover"]["path"]
+        cover.write_bytes(b"x" * cover.stat().st_size)
+        self.env["UPLOAD_EXIT"] = "1"
+        result = self.run_publish("--base", base)
+        self.assertNotEqual(result.returncode, 0)
+        self.calls.unlink()
+        del self.env["UPLOAD_EXIT"]
+        intro = self.root / self.case["introduction"]["path"]
+        intro.write_bytes(b"y" * intro.stat().st_size)
+        result = self.run_publish("--base", base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call[3] for call in self.uploads()], [
+            "s3://test-bucket/cases/a-test-case/A Test—Case.png",
+            "s3://test-bucket/cases/a-test-case/A Test—Case.md",
+        ])
 
     def remote(self, status=200, etag='"remote-tag"'):
         self.requests = []

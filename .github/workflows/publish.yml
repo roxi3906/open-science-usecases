@@ -1,4 +1,5 @@
 name: publish
+run-name: Publish ${{ github.event.workflow_run.head_sha }}
 
 on:
   workflow_run:
@@ -8,19 +9,74 @@ on:
 
 permissions:
   contents: read
+  actions: read
+
+# Serialize preparation and upload together so a plan cannot use a stale base.
+concurrency:
+  group: publish
+  queue: max
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  prepare:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == github.repository
-    concurrency:
-      group: publish
-      # Late check completions must not cancel a newer queued publication.
-      queue: max
-      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      has_uploads: ${{ steps.plan.outputs.has_uploads }}
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - name: Check out the validated commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test publishing and structure behavior
+        run: python3 -B -m unittest discover -s .github/tests -v
+
+      - name: Skip superseded main commits
+        id: current-main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          latest_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [ "$CHECKED_SHA" = "$latest_sha" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping publication because main has a newer commit."
+          fi
+
+      - name: Find the last actual publication
+        id: baseline
+        if: steps.current-main.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/publication_base.py
+
+      - name: Prepare uploads and replacements
+        id: plan
+        if: steps.current-main.outputs.current == 'true'
+        env:
+          BASE_SHA: ${{ steps.baseline.outputs.base }}
+        run: |
+          # A force-push or expired history can make an old commit unavailable.
+          if [ -n "$BASE_SHA" ] && ! git cat-file -e "$BASE_SHA^{commit}"; then
+            echo "::notice::Publication base is unavailable; preparing all resources."
+            BASE_SHA=""
+          fi
+          python3 .github/scripts/publish.py --base "$BASE_SHA" --prepare "$RUNNER_TEMP/publication-plan.json"
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.has_uploads == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -28,10 +84,20 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Test publishing behavior
-        run: python3 -B -m unittest discover -s .github/tests -p test_publish.py -v
+      - name: Restore the prepared publication
+        env:
+          PLAN_JSON: ${{ needs.prepare.outputs.plan }}
+        run: |
+          # A failed-jobs-only rerun reuses prepare's outputs. Recover any
+          # partial writes with a fresh full plan before retrying the upload.
+          if [ "$GITHUB_RUN_ATTEMPT" -gt 1 ]; then
+            python3 .github/scripts/publish.py --prepare "$RUNNER_TEMP/publication-plan.json"
+          else
+            python3 -c 'import os, pathlib; pathlib.Path(os.environ["RUNNER_TEMP"], "publication-plan.json").write_text(os.environ["PLAN_JSON"], encoding="utf-8")'
+          fi
 
       - name: Skip superseded main commits
         id: current-main
@@ -64,4 +130,4 @@ jobs:
           done
           aws --version
           curl --version
-          python3 .github/scripts/publish.py
+          python3 .github/scripts/publish.py --apply-plan "$RUNNER_TEMP/publication-plan.json"
