@@ -3,7 +3,6 @@
 
 import argparse
 from collections import Counter
-import hashlib
 from http.client import HTTPException
 from ipaddress import IPv6Address
 import json
@@ -13,7 +12,7 @@ import re
 import subprocess
 import sys
 import unicodedata
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -263,34 +262,35 @@ class HeadRedirectHandler(HTTPRedirectHandler):
     http_error_308 = HTTPRedirectHandler.http_error_302
 
 
-def validate_remote_size(url, size, label, errors, timeout=15):
-    log(f"{label}: sending HEAD to check the remote .science file and its size; no download.")
+def validate_head_size(url, size, label, errors, timeout=15):
+    log(f"{label}: sending HEAD to check file availability and size; no download or checksum check.")
     request = Request(url, method="HEAD", headers={"Accept-Encoding": "identity"})
     try:
         with build_opener(HeadRedirectHandler()).open(request, timeout=timeout) as response:
             if response.status != 200:
-                errors.append(f"{label}.release_url: HEAD returned HTTP {response.status}. "
-                              "Use a public download URL that returns HTTP 200 for HEAD requests.")
+                errors.append(f"{label}: HEAD returned HTTP {response.status}. "
+                              "Check the resource URL; it must return HTTP 200 for HEAD requests.")
                 return
             length = response.headers.get("Content-Length")
             if length is None or not re.fullmatch(r"[0-9]+", length):
                 errors.append(f"{label}.bytes: HEAD returned Content-Length {show(length)}, "
                               "so the file size could not be verified. Use a download host that returns "
-                              "a valid Content-Length for HEAD requests, or commit the .science file locally.")
+                              "a valid Content-Length for HEAD requests.")
                 return
             actual_size = int(length)
             if actual_size != size:
                 errors.append(f"{label}.bytes: manifest says {size}, but HEAD reports {actual_size} bytes. "
-                              f"Update bytes to {actual_size}, or correct release_url to point to the intended file.")
+                              f"Update bytes to {actual_size}, or correct the resource URL to point to the intended file.")
             else:
-                log(f"{label}: HEAD confirmed HTTP 200 and {actual_size} bytes. Remote sha256 is not checked.")
+                log(f"{label}: HEAD confirmed HTTP 200 and {actual_size} bytes.")
     except HTTPError as error:
-        errors.append(f"{label}.release_url: HEAD failed with HTTP {error.code} ({error.reason}). "
+        errors.append(f"{label}: HEAD failed with HTTP {error.code} ({error.reason}). "
                       "Check that the asset exists, is publicly accessible, and its host supports HEAD. "
-                      "Correct the download URL or commit the .science file locally.")
+                      "For repository files, check CASE_FILE_BASE_URL and the PR head commit; "
+                      "for external files, correct release_url.")
         error.close()
     except (URLError, OSError, HTTPException, ValueError) as error:
-        errors.append(f"{label}.release_url: HEAD could not finish: {error}. "
+        errors.append(f"{label}: HEAD could not finish: {error}. "
                       "Check the download URL, network connection, and server certificate, then rerun the workflow. "
                       f"Each connection has a {timeout}-second timeout.")
 
@@ -298,13 +298,10 @@ def validate_remote_size(url, size, label, errors, timeout=15):
 def validate_resource(resource, case, key, extension, errors):
     directory = case["directory"]
     label = f"manifest.json / {show(directory)} / {key}"
-    remote = key == "case" and not case["has_local_science"]
     keys = {"file_name", "path", "bytes"}
-    if not remote:
-        keys.add("sha256")
     if key == "case":
         keys.add("release_url")
-    if not require_keys(resource, keys, label, errors, optional={"sha256"} if remote else ()):
+    if not require_keys(resource, keys, label, errors, optional={"sha256"}):
         return
     filename = f"{directory}.{extension}"
     expected_path = f"{directory}/{filename}"
@@ -317,11 +314,6 @@ def validate_resource(resource, case, key, extension, errors):
     if not size_valid:
         errors.append(f"{label}.bytes: found {show(size)}. Enter the file size in bytes as "
                       "a whole number, without quotes, that is zero or greater.")
-    checksum = resource.get("sha256")
-    checksum_valid = not remote and isinstance(checksum, str) and re.fullmatch(r"[0-9a-f]{64}", checksum)
-    if not remote and not checksum_valid:
-        errors.append(f"{label}.sha256: found {show(checksum)}. Calculate the file's SHA-256 "
-                      "and enter all 64 lowercase hexadecimal characters (0-9 and a-f).")
     if key == "case":
         release_url = resource.get("release_url")
         if case["has_local_science"]:
@@ -334,24 +326,18 @@ def validate_resource(resource, case, key, extension, errors):
                           "(for example, https://example.com/case.science), or add the same-named .science file "
                           "and set release_url to an empty string. README links are not used.")
         elif size_valid:
-            validate_remote_size(release_url, size, label, errors)
+            validate_head_size(release_url, size, label, errors)
     if key != "case" or case["has_local_science"]:
         path = Path(expected_path)
         if not regular_file(path):
             errors.append(f"{label}: {file_problem(path)}")
             return
-        actual_size = path.stat().st_size
-        if size_valid and size != actual_size:
-            errors.append(f"{label}.bytes: manifest says {size}, but {show(expected_path)} is "
-                          f"{actual_size} bytes. Update bytes to {actual_size}, or restore the intended file.")
-        digest = hashlib.sha256()
-        with path.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
-        actual_checksum = digest.hexdigest()
-        if checksum_valid and checksum != actual_checksum:
-            errors.append(f"{label}.sha256: manifest says {show(checksum)}, but {show(expected_path)} "
-                          f"has SHA-256 {show(actual_checksum)}. Update sha256 to this value, or restore the intended file.")
+        if size_valid:
+            base_url = os.environ.get("CASE_FILE_BASE_URL")
+            if not base_url:
+                raise ValueError("CASE_FILE_BASE_URL is missing. Set it to the GitHub Raw URL for the "
+                                 "PR head repository and commit so repository file sizes can be checked with HEAD.")
+            validate_head_size(base_url.rstrip("/") + "/" + quote(expected_path), size, label, errors)
 
 
 def validate_manifest(cases):

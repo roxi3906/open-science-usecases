@@ -1,5 +1,4 @@
 import copy
-import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -10,6 +9,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from urllib.parse import quote, unquote, urlsplit
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "check_structure.py"
@@ -22,8 +22,12 @@ CHECKER = runpy.run_path(str(SCRIPT))
 class AssetHandler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.server.requests.append((self.command, self.path))
-        status, headers = self.server.responses.get(
-            self.path, (200, {"Content-Length": "15"}))
+        default = (200, {"Content-Length": "15"})
+        path = unquote(urlsplit(self.path).path)
+        if path.startswith("/repository/"):
+            file = self.server.root / path[len("/repository/"):]
+            default = (200, {"Content-Length": str(file.stat().st_size)}) if file.is_file() else (404, {})
+        status, headers = self.server.responses.get(self.path, default)
         self.send_response(status)
         for key, value in headers.items():
             self.send_header(key, value)
@@ -57,6 +61,7 @@ class StructureTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.http.root = self.root
         self.git("init", "-q")
         self.git("config", "user.name", "Structure Test")
         self.git("config", "user.email", "structure@example.invalid")
@@ -89,7 +94,7 @@ class StructureTests(unittest.TestCase):
                 "file_name": filename,
                 "path": path,
                 "bytes": len(content.encode()),
-                "sha256": hashlib.sha256(content.encode()).hexdigest(),
+                "sha256": "ignored checksum",
             }
             if key != "case" or not remote:
                 self.write(path, content)
@@ -104,7 +109,8 @@ class StructureTests(unittest.TestCase):
     def run_stage(self, stage, *args, cases=None, extra_env=None):
         output = self.root / ".step-output"
         output.write_text("")
-        env = {**os.environ, "GITHUB_OUTPUT": str(output), "GITHUB_ACTIONS": "false"}
+        env = {**os.environ, "GITHUB_OUTPUT": str(output), "GITHUB_ACTIONS": "false",
+               "CASE_FILE_BASE_URL": f"http://127.0.0.1:{self.http.server_port}/repository"}
         env.pop("CASES_JSON", None)
         if cases is not None:
             env["CASES_JSON"] = json.dumps(cases)
@@ -138,6 +144,28 @@ class StructureTests(unittest.TestCase):
             "has_local_science": True,
         }])
         self.check_manifest()
+
+    def test_all_repository_resources_use_head_with_optional_ignored_checksums(self):
+        entry = self.case()
+        for key in ("cover", "case", "introduction"):
+            del entry[key]["sha256"]
+        self.manifest([entry]); self.commit()
+        self.check_manifest()
+        expected = [("HEAD", "/repository/" + quote(entry[key]["path"]))
+                    for key in ("cover", "case", "introduction")]
+        self.assertEqual(self.http.requests, expected)
+        for key, value in (("cover", None), ("case", "wrong"), ("introduction", {})):
+            entry[key]["sha256"] = value
+        self.manifest([entry])
+        self.check_manifest()
+
+    def test_repository_size_is_checked_against_head_not_local_stat(self):
+        entry = self.case()
+        path = "/repository/" + quote(entry["cover"]["path"])
+        self.http.responses[path] = (200, {"Content-Length": "123456"})
+        self.commit()
+        result = self.check_manifest(expected=1)
+        self.assertIn("HEAD reports 123456", result.stderr)
 
     def test_remote_case_without_readme_passes_using_manifest_url(self):
         self.case(remote=True)
@@ -190,7 +218,8 @@ class StructureTests(unittest.TestCase):
         del entry["case"]["sha256"]
         self.manifest([entry]); self.commit()
         self.check_manifest()
-        self.assertEqual(self.http.requests, [("HEAD", "/case.science?download=1")])
+        self.assertIn(("HEAD", "/case.science?download=1"), self.http.requests)
+        self.assertTrue(all(method == "HEAD" for method, _ in self.http.requests))
         entry["case"]["sha256"] = "not checked for remote assets"
         self.manifest([entry])
         self.check_manifest()
@@ -202,7 +231,10 @@ class StructureTests(unittest.TestCase):
                 self.http.requests = []
                 self.http.responses = {"/case.science": (status, {"Location": "/asset"})}
                 self.check_manifest()
-                self.assertEqual(self.http.requests, [("HEAD", "/case.science"), ("HEAD", "/asset")])
+                remote_requests = [(method, path) for method, path in self.http.requests
+                                   if not path.startswith("/repository/")]
+                self.assertEqual(remote_requests, [("HEAD", "/case.science"), ("HEAD", "/asset")])
+                self.assertTrue(all(method == "HEAD" for method, _ in self.http.requests))
 
     def test_remote_head_failures_explain_how_to_fix_the_url_or_size(self):
         self.case(remote=True); self.commit()
@@ -227,7 +259,7 @@ class StructureTests(unittest.TestCase):
         # Bind a real server without serving responses to force a read timeout.
         with ThreadingHTTPServer(("127.0.0.1", 0), AssetHandler) as server:
             errors = []
-            CHECKER["validate_remote_size"](
+            CHECKER["validate_head_size"](
                 f"http://127.0.0.1:{server.server_port}/case.science", 15, "case", errors,
                 timeout=0.05)
         self.assertEqual(len(errors), 1)
@@ -243,7 +275,7 @@ class StructureTests(unittest.TestCase):
                 self.manifest(entries)
                 self.check_manifest(expected=1)
 
-    def test_manifest_keys_types_paths_and_hashes_are_checked(self):
+    def test_manifest_keys_types_paths_and_sizes_are_checked(self):
         entry = self.case()
         self.commit()
         mutations = [
@@ -251,8 +283,7 @@ class StructureTests(unittest.TestCase):
             ((), "unexpected", True), (("cover",), "file_name", "wrong.png"),
             (("cover",), "path", "../outside.png"), (("case",), "bytes", True),
             (("case",), "bytes", -1), (("case",), "bytes", "15"),
-            (("cover",), "bytes", 999), (("introduction",), "sha256", "0" * 64),
-            (("case",), "sha256", "not-a-hash"), (("case",), "release_url", URL),
+            (("cover",), "bytes", 999), (("case",), "release_url", URL),
         ]
         for parents, key, value in mutations:
             with self.subTest(parents=parents, key=key, value=value):
@@ -270,6 +301,8 @@ class StructureTests(unittest.TestCase):
         for parent in (None, "cover", "case", "introduction"):
             target = entry if parent is None else entry[parent]
             for key in target:
+                if key == "sha256":
+                    continue
                 with self.subTest(parent=parent, key=key):
                     changed = copy.deepcopy(entry)
                     del (changed if parent is None else changed[parent])[key]
@@ -341,10 +374,9 @@ class StructureTests(unittest.TestCase):
         result = self.check_manifest(expected=1)
         self.assertIn("12345", result.stderr)
         self.assertIn(str(len(b"fixture png")), result.stderr)
-        self.assertIn("0" * 64, result.stderr)
-        self.assertIn(hashlib.sha256(b"fixture png").hexdigest(), result.stderr)
+        self.assertNotIn("0" * 64, result.stderr)
         self.assertIn("Update", result.stderr)
-        self.assertIn("2 problems", result.stderr)
+        self.assertIn("1 problem", result.stderr)
 
     def test_manifest_json_error_includes_location_and_fix(self):
         self.case()
@@ -551,7 +583,6 @@ class StructureTests(unittest.TestCase):
         content = "updated introduction"
         self.write(f"{TITLE}/{TITLE}.md", content)
         entry["introduction"]["bytes"] = len(content)
-        entry["introduction"]["sha256"] = hashlib.sha256(content.encode()).hexdigest()
         self.manifest([entry, legacy])
         self.commit()
         self.check_manifest()
@@ -654,7 +685,6 @@ class StructureTests(unittest.TestCase):
         entry = self.case()
         self.write(f"{TITLE}/{TITLE}.png", "x")
         entry["cover"]["bytes"] = 1
-        entry["cover"]["sha256"] = hashlib.sha256(b"x").hexdigest()
         self.manifest([entry]); self.commit()
         self.base = self.git("rev-parse", "HEAD").strip()
         entry["cover"]["bytes"] = True
