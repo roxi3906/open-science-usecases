@@ -8,7 +8,7 @@ import subprocess
 import sys
 from urllib.parse import urlsplit
 
-from manifest_diff import git, local_resources, manifests, validate_range
+from manifest_diff import git, local_resources, manifests
 
 
 def declared_sha(resource):

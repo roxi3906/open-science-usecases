@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate only cases affected by path changes or manifest edits."""
+"""Validate only cases affected by file changes or manifest edits."""
 
 import argparse
 from collections import Counter
@@ -136,13 +136,15 @@ def directories(base, merge_base=False, new_branch_base=None):
     structural = case_folders(previous_paths ^ current_paths)
     # Keep both paths when a file is renamed, including manifest.json's old path.
     changed_paths = set(git("diff", "--no-renames", "--name-only", "-z", base, "HEAD").split("\0")) if base else current_paths
+    changed = case_folders(changed_paths)
     manifest_changed = "manifest.json" in changed_paths
-    log(f"Cases with path changes: {len(structural)}. manifest.json changed: {manifest_changed}.")
-    if not structural and not manifest_changed:
+    log(f"Cases with file changes: {len(changed)}. Cases with path changes: {len(structural)}. "
+        f"manifest.json changed: {manifest_changed}.")
+    if not changed and not manifest_changed:
         return [], []
 
     manifest = manifest_entries(Path("manifest.json").read_text(encoding="utf-8"), "manifest.json")
-    selected = structural & current
+    selected = changed & current
     errors = []
     known = previous | current
     if manifest_changed:
@@ -199,7 +201,7 @@ def directories(base, merge_base=False, new_branch_base=None):
                     problems.append(file_problem(folder / f"{directory}.{extension}"))
         else:
             log(f"Skipping directory/name checks for {show(directory)}: its paths are unchanged. "
-                "Rechecking the changed manifest entry and its resources only.")
+                "Rechecking its manifest entry and resources for file or metadata changes.")
         local = regular_file(folder / f"{directory}.science")
         log(f"Selected case {show(directory)} (manifest name: {show(name)}). "
             + ("Found the local .science file; case.release_url must be empty."
@@ -263,7 +265,7 @@ class HeadRedirectHandler(HTTPRedirectHandler):
 
 
 def validate_head_size(url, size, label, errors, timeout=15):
-    log(f"{label}: sending HEAD to check file availability and size; no download or checksum check.")
+    log(f"{label}: sending HEAD to check file availability and size; no download or checksum computation.")
     request = Request(url, method="HEAD", headers={"Accept-Encoding": "identity"})
     try:
         with build_opener(HeadRedirectHandler()).open(request, timeout=timeout) as response:
@@ -298,11 +300,16 @@ def validate_head_size(url, size, label, errors, timeout=15):
 def validate_resource(resource, case, key, extension, errors):
     directory = case["directory"]
     label = f"manifest.json / {show(directory)} / {key}"
-    keys = {"file_name", "path", "bytes"}
+    keys = {"file_name", "path", "bytes", "sha256"}
     if key == "case":
         keys.add("release_url")
-    if not require_keys(resource, keys, label, errors, optional={"sha256"}):
+    if not require_keys(resource, keys, label, errors):
         return
+    checksum = resource["sha256"]
+    if not isinstance(checksum, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", checksum):
+        errors.append(f"{label}.sha256: found {show(checksum)}. Enter exactly 64 hexadecimal characters "
+                      "(0-9, a-f, A-F), without whitespace. Compute SHA-256 from the file on your "
+                      "device before committing and update manifest.json; CI checks the format only.")
     filename = f"{directory}.{extension}"
     expected_path = f"{directory}/{filename}"
     for field, expected in (("file_name", filename), ("path", expected_path)):
@@ -471,7 +478,7 @@ def main():
             log(f"FAIL: {stage} found {len(errors)} {noun}. Affected case directories: {len(cases)}. "
                 "Follow the fixes above, commit the changes, and rerun the workflow.")
         elif not cases:
-            log("PASS: No relevant case changes need validation. Directory paths and manifest entries are unchanged, "
+            log("PASS: No relevant case changes need validation. Case files and manifest entries are unchanged, "
                 "or cases and their entries were removed together. Skipping further checks.")
         else:
             log(f"PASS: {stage} finished. No problems found. Affected case directories: {len(cases)}.")
