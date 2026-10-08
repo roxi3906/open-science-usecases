@@ -391,6 +391,37 @@ def validate_manifest(cases):
     return errors
 
 
+
+def check_declarations(root, before, after):
+    """Check Git object changes against declarations, without hashing file contents."""
+    from manifest_diff import git as range_git, local_resources, manifests
+    old, new, _ = manifests(root, before, after)
+    previous, current = local_resources(old), local_resources(new)
+    changed = set(range_git(root, "diff", "--no-renames", "--diff-filter=AMT", "--name-only",
+                            "-z", before, after).split("\0")) - {""}
+    errors = []
+    for key, resource in current.items():
+        prior = previous.get(key)
+        path = resource["path"]
+        if prior == resource and path not in changed:
+            continue
+        declaration = resource.get("sha256")
+        if not isinstance(declaration, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", declaration):
+            errors.append(f"{key}: sha256 must be a 64-digit hexadecimal declaration.")
+            continue
+        listing = range_git(root, "ls-tree", after, "--", path).split()
+        if not listing or listing[0] not in ("100644", "100755"):
+            errors.append(f"{key}: local resource must be a committed regular file.")
+            continue
+        if prior and prior["path"] == path and path in changed:
+            old_object = range_git(root, "rev-parse", before + ":" + path).strip()
+            new_object = range_git(root, "rev-parse", after + ":" + path).strip()
+            previous_sha = prior.get("sha256")
+            if old_object != new_object and isinstance(previous_sha, str) and previous_sha.lower() == declaration.lower():
+                errors.append(f"{key}: file content changed; synchronize its manifest sha256 declaration.")
+    return errors
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="stage", required=True)
@@ -399,7 +430,19 @@ def main():
     scan.add_argument("--merge-base", action="store_true", help="Compare to the common ancestor for a PR")
     scan.add_argument("--new-branch-base", help="Default branch ref for a new feature branch's first push")
     commands.add_parser("manifest", help="Read directory results from CASES_JSON")
+    declarations = commands.add_parser("declarations", help="Check changed local resource SHA declarations")
+    declarations.add_argument("--base", required=True)
+    declarations.add_argument("--after", required=True)
     args = parser.parse_args()
+    if args.stage == "declarations":
+        try:
+            errors = check_declarations(Path.cwd(), args.base, args.after)
+            for error in errors:
+                report_error(error)
+            return int(bool(errors))
+        except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
+            report_error(str(error))
+            return 1
     stage = "Change detection and directory check" if args.stage == "directories" else "Manifest check"
     actions = os.environ.get("GITHUB_ACTIONS") == "true"
     if actions:
