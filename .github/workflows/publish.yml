@@ -1,0 +1,42 @@
+name: publish
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Test publishing behavior
+        run: python3 -B -m unittest discover -s tests -v
+
+      - name: Publish local resources to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_TARGET_FOLDER: ${{ secrets.AWS_TARGET_FOLDER }}
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: |
+          for secret in AWS_ACCESS_KEY_ID AWS_DEFAULT_REGION AWS_SECRET_ACCESS_KEY AWS_TARGET_FOLDER; do
+            if [ -z "${!secret}" ]; then
+              echo "::error::Missing required secret: $secret"
+              exit 1
+            fi
+          done
+          aws --version
+          curl --version
+          python3 scripts/publish.py
