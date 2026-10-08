@@ -1,11 +1,14 @@
 import copy
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import subprocess
+import runpy
 import sys
 import tempfile
+import threading
 import unittest
 
 
@@ -13,10 +16,44 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "check_structure.py"
 TITLE = "New AI Case—Does It Work"
 NAME = "new-ai-case-does-it-work"
 URL = "https://example.com/releases/new-case.science"
+CHECKER = runpy.run_path(str(SCRIPT))
+
+
+class AssetHandler(BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        self.server.requests.append((self.command, self.path))
+        status, headers = self.server.responses.get(
+            self.path, (200, {"Content-Length": "15"}))
+        self.send_response(status)
+        for key, value in headers.items():
+            self.send_header(key, value)
+        self.end_headers()
+
+    def do_GET(self):
+        self.server.requests.append((self.command, self.path))
+        self.send_error(405)
+
+    def log_message(self, *args):
+        pass
 
 
 class StructureTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.http = ThreadingHTTPServer(("127.0.0.1", 0), AssetHandler)
+        cls.thread = threading.Thread(target=cls.http.serve_forever, daemon=True)
+        cls.thread.start()
+        cls.url = f"http://127.0.0.1:{cls.http.server_port}/case.science"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.http.shutdown()
+        cls.http.server_close()
+        cls.thread.join()
+
     def setUp(self):
+        self.http.requests = []
+        self.http.responses = {}
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -56,7 +93,7 @@ class StructureTests(unittest.TestCase):
             }
             if key != "case" or not remote:
                 self.write(path, content)
-        resources["case"]["release_url"] = URL if remote else ""
+        resources["case"]["release_url"] = self.url if remote else ""
         entry = {"title": TITLE, "name": NAME, **resources}
         self.manifest([entry])
         return entry
@@ -141,15 +178,62 @@ class StructureTests(unittest.TestCase):
                 self.check_manifest()
 
     def test_remote_manifest_url_accepts_science_paths_with_query_or_fragment(self):
-        entry = self.case(remote=True)
-        self.commit()
         for url in (URL, "http://example.com/other.science", "https://[::1]/case.science",
                     "https://example.com:443/case.science", URL + "?download=1#asset",
                     URL + "?token=abc!", URL + "#asset;"):
             with self.subTest(url=url):
-                entry["case"]["release_url"] = url
-                self.manifest([entry])
+                self.assertTrue(CHECKER["is_science_url"](url))
+
+    def test_remote_head_checks_size_without_sha256_or_get(self):
+        entry = self.case(remote=True)
+        entry["case"]["release_url"] += "?download=1#asset"
+        del entry["case"]["sha256"]
+        self.manifest([entry]); self.commit()
+        self.check_manifest()
+        self.assertEqual(self.http.requests, [("HEAD", "/case.science?download=1")])
+        entry["case"]["sha256"] = "not checked for remote assets"
+        self.manifest([entry])
+        self.check_manifest()
+
+    def test_remote_head_redirects_never_switch_to_get(self):
+        self.case(remote=True); self.commit()
+        for status in (301, 302, 303, 307, 308):
+            with self.subTest(status=status):
+                self.http.requests = []
+                self.http.responses = {"/case.science": (status, {"Location": "/asset"})}
                 self.check_manifest()
+                self.assertEqual(self.http.requests, [("HEAD", "/case.science"), ("HEAD", "/asset")])
+
+    def test_remote_head_failures_explain_how_to_fix_the_url_or_size(self):
+        self.case(remote=True); self.commit()
+        for status, headers, detail in (
+            (404, {}, "404"), (405, {}, "405"),
+            (204, {}, "204"), (206, {"Content-Length": "15"}, "206"),
+            (302, {"Location": "/case.science"}, "302"),
+            (302, {"Location": "ftp://127.0.0.1/asset.science"}, "HTTP(S)"),
+            (200, {}, "Content-Length"),
+            (200, {"Content-Length": "invalid"}, "Content-Length"),
+            (200, {"Content-Length": "-1"}, "Content-Length"),
+            (200, {"Content-Length": "123"}, "123"),
+        ):
+            with self.subTest(status=status, headers=headers):
+                self.http.responses = {"/case.science": (status, headers)}
+                result = self.check_manifest(expected=1)
+                self.assertIn(detail, result.stderr)
+                self.assertIn("HEAD", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_remote_head_timeout_is_an_actionable_error(self):
+        # Bind a real server without serving responses to force a read timeout.
+        with ThreadingHTTPServer(("127.0.0.1", 0), AssetHandler) as server:
+            errors = []
+            CHECKER["validate_remote_size"](
+                f"http://127.0.0.1:{server.server_port}/case.science", 15, "case", errors,
+                timeout=0.05)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("HEAD could not finish", errors[0])
+        self.assertIn("timeout", errors[0])
+        self.assertIn("rerun", errors[0])
 
     def test_missing_duplicate_or_wrong_manifest_name_fails(self):
         entry = self.case()
@@ -531,7 +615,7 @@ class StructureTests(unittest.TestCase):
     def test_science_removal_with_release_url_update_passes(self):
         entry = self.existing_case()
         self.git("rm", f"{TITLE}/{TITLE}.science")
-        entry["case"]["release_url"] = URL
+        entry["case"]["release_url"] = self.url
         self.manifest([entry]); self.commit()
         self.check_manifest()
 

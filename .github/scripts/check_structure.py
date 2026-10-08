@@ -4,6 +4,7 @@
 import argparse
 from collections import Counter
 import hashlib
+from http.client import HTTPException
 from ipaddress import IPv6Address
 import json
 import os
@@ -13,6 +14,8 @@ import subprocess
 import sys
 import unicodedata
 from urllib.parse import urlsplit
+from urllib.error import HTTPError, URLError
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 def git(*args):
@@ -230,28 +233,78 @@ def read_json(text, source):
         raise ValueError(f"{source}: {error}") from error
 
 
-def require_keys(value, keys, label, errors):
+def require_keys(value, keys, label, errors, optional=()):
     if not isinstance(value, dict):
         errors.append(f"{label}: expected a JSON object, but found {show(value)}. "
                       f"Replace it with an object containing these fields: {', '.join(sorted(keys))}.")
         return False
-    missing, extra = keys - value.keys(), value.keys() - keys
+    allowed = keys | set(optional)
+    missing, extra = keys - value.keys(), value.keys() - allowed
     if missing:
         errors.append(f"{label}: missing fields: {', '.join(sorted(missing))}. "
                       "Add these fields to this object in manifest.json.")
     if extra:
         errors.append(f"{label}: unrecognized fields: {', '.join(sorted(extra))}. "
-                      f"Remove them or correct their spelling. Allowed fields: {', '.join(sorted(keys))}.")
+                      f"Remove them or correct their spelling. Allowed fields: {', '.join(sorted(allowed))}.")
     return not missing
+
+
+class HeadRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urlsplit(newurl).scheme not in ("http", "https"):
+            raise HTTPError(newurl, code, "redirect must use HTTP(S)", headers, fp)
+        # Older Python versions turn redirected HEAD requests into GET requests.
+        redirected = super().redirect_request(req, fp, 307 if code == 308 else code,
+                                              msg, headers, newurl)
+        if redirected is not None:
+            redirected.method = "HEAD"
+        return redirected
+
+    http_error_308 = HTTPRedirectHandler.http_error_302
+
+
+def validate_remote_size(url, size, label, errors, timeout=15):
+    log(f"{label}: sending HEAD to check the remote .science file and its size; no download.")
+    request = Request(url, method="HEAD", headers={"Accept-Encoding": "identity"})
+    try:
+        with build_opener(HeadRedirectHandler()).open(request, timeout=timeout) as response:
+            if response.status != 200:
+                errors.append(f"{label}.release_url: HEAD returned HTTP {response.status}. "
+                              "Use a public download URL that returns HTTP 200 for HEAD requests.")
+                return
+            length = response.headers.get("Content-Length")
+            if length is None or not re.fullmatch(r"[0-9]+", length):
+                errors.append(f"{label}.bytes: HEAD returned Content-Length {show(length)}, "
+                              "so the file size could not be verified. Use a download host that returns "
+                              "a valid Content-Length for HEAD requests, or commit the .science file locally.")
+                return
+            actual_size = int(length)
+            if actual_size != size:
+                errors.append(f"{label}.bytes: manifest says {size}, but HEAD reports {actual_size} bytes. "
+                              f"Update bytes to {actual_size}, or correct release_url to point to the intended file.")
+            else:
+                log(f"{label}: HEAD confirmed HTTP 200 and {actual_size} bytes. Remote sha256 is not checked.")
+    except HTTPError as error:
+        errors.append(f"{label}.release_url: HEAD failed with HTTP {error.code} ({error.reason}). "
+                      "Check that the asset exists, is publicly accessible, and its host supports HEAD. "
+                      "Correct the download URL or commit the .science file locally.")
+        error.close()
+    except (URLError, OSError, HTTPException, ValueError) as error:
+        errors.append(f"{label}.release_url: HEAD could not finish: {error}. "
+                      "Check the download URL, network connection, and server certificate, then rerun the workflow. "
+                      f"Each connection has a {timeout}-second timeout.")
 
 
 def validate_resource(resource, case, key, extension, errors):
     directory = case["directory"]
     label = f"manifest.json / {show(directory)} / {key}"
-    keys = {"file_name", "path", "bytes", "sha256"}
+    remote = key == "case" and not case["has_local_science"]
+    keys = {"file_name", "path", "bytes"}
+    if not remote:
+        keys.add("sha256")
     if key == "case":
         keys.add("release_url")
-    if not require_keys(resource, keys, label, errors):
+    if not require_keys(resource, keys, label, errors, optional={"sha256"} if remote else ()):
         return
     filename = f"{directory}.{extension}"
     expected_path = f"{directory}/{filename}"
@@ -265,8 +318,8 @@ def validate_resource(resource, case, key, extension, errors):
         errors.append(f"{label}.bytes: found {show(size)}. Enter the file size in bytes as "
                       "a whole number, without quotes, that is zero or greater.")
     checksum = resource.get("sha256")
-    checksum_valid = isinstance(checksum, str) and re.fullmatch(r"[0-9a-f]{64}", checksum)
-    if not checksum_valid:
+    checksum_valid = not remote and isinstance(checksum, str) and re.fullmatch(r"[0-9a-f]{64}", checksum)
+    if not remote and not checksum_valid:
         errors.append(f"{label}.sha256: found {show(checksum)}. Calculate the file's SHA-256 "
                       "and enter all 64 lowercase hexadecimal characters (0-9 and a-f).")
     if key == "case":
@@ -280,6 +333,8 @@ def validate_resource(resource, case, key, extension, errors):
                           f"{show(expected_path)}. Add a complete HTTP(S) download URL whose path ends in .science "
                           "(for example, https://example.com/case.science), or add the same-named .science file "
                           "and set release_url to an empty string. README links are not used.")
+        elif size_valid:
+            validate_remote_size(release_url, size, label, errors)
     if key != "case" or case["has_local_science"]:
         path = Path(expected_path)
         if not regular_file(path):
