@@ -53,7 +53,7 @@ class PublishTests(unittest.TestCase):
     def uploads(self):
         return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
 
-    def remote(self, status=200):
+    def remote(self, status=200, etag='"remote-tag"'):
         self.requests = []
         requests = self.requests
 
@@ -67,7 +67,7 @@ class PublishTests(unittest.TestCase):
                     self.send_response(status)
                     self.send_header("Content-Length", "681599670")
                     self.send_header("Content-Type", "application/octet-stream")
-                    self.send_header("ETag", '"remote-tag"')
+                    self.send_header("ETag", etag)
                 self.end_headers()
 
             def do_GET(self):
@@ -99,6 +99,7 @@ class PublishTests(unittest.TestCase):
 
     def test_remote_resource_uses_head_even_after_redirect_and_never_uploads(self):
         self.remote()
+        (self.root / self.case["case"]["path"]).unlink()
         result = self.run_publish()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.requests, [("HEAD", "/redirect"), ("HEAD", "/asset")])
@@ -106,6 +107,35 @@ class PublishTests(unittest.TestCase):
         self.assertFalse(any(call[3].endswith(".science") for call in self.uploads()))
         self.assertIn("681599670", result.stdout)
         self.assertIn("remote-tag", result.stdout)
+
+    def test_local_file_takes_priority_over_release_url_without_head(self):
+        self.remote()
+        result = self.run_publish()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.requests, [])
+        self.assertEqual(len(self.uploads()), 3)
+        self.assertIn("s3://test-bucket/cases/a-test-case/A Test—Case.science",
+                      [call[3] for call in self.uploads()])
+
+    def test_corrupt_local_file_does_not_fall_back_to_release_url(self):
+        self.remote()
+        path = self.root / self.case["case"]["path"]
+        path.write_bytes(b"x" * path.stat().st_size)
+        result = self.run_publish()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SHA-256 mismatch", result.stderr)
+        self.assertEqual(self.requests, [])
+        self.assertEqual(self.uploads(), [])
+
+    def test_non_utf8_head_headers_do_not_block_local_uploads(self):
+        self.remote(etag='"caf\xe9\x85"')
+        (self.root / self.case["case"]["path"]).unlink()
+        result = self.run_publish()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.requests, [("HEAD", "/redirect"), ("HEAD", "/asset")])
+        self.assertEqual(len(self.uploads()), 2)
+        metadata = json.loads(result.stdout.split("\n")[0])
+        self.assertEqual(metadata["headers"]["etag"], '"caf\xe9\x85"')
 
     def test_head_failure_does_not_fall_back_to_get_or_block_local_uploads(self):
         self.remote(status=405)

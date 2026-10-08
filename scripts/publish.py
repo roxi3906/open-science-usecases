@@ -33,13 +33,14 @@ def publication_plan(root, target):
             if (Path(filename).name != filename or "\\" in filename
                     or not filename.endswith(suffix)):
                 raise ValueError("Invalid resource filename: " + filename)
-            if resource.get("release_url"):
-                remote.append((name, resource))
-                continue
             relative = Path(resource["path"])
             path = (root / relative).resolve()
             if relative.is_absolute() or root not in path.parents:
                 raise ValueError("Resource path must stay inside the repository: " + str(relative))
+            # A local copy always wins and must pass validation before upload.
+            if not path.exists() and resource.get("release_url"):
+                remote.append((name, resource))
+                continue
             if path.stat().st_size != resource["bytes"]:
                 raise ValueError("Size mismatch: " + str(relative))
             digest = hashlib.sha256()
@@ -58,7 +59,7 @@ def inspect_remote(name, resource):
          "--connect-timeout", "10", "--max-time", "30", "--max-redirs", "5",
          "--proto", "=http,https", "--proto-redir", "=http,https",
          "--url", resource["release_url"]],
-        capture_output=True, text=True, check=False,
+        capture_output=True, check=False,
     )
     info = {"name": name, "file_name": resource["file_name"],
             "manifest_bytes": resource["bytes"], "manifest_sha256": resource["sha256"]}
@@ -67,7 +68,10 @@ def inspect_remote(name, resource):
         info["curl_exit_code"] = result.returncode
     else:
         headers = {}
-        for line in result.stdout.splitlines():
+        # HTTP field values can contain opaque non-UTF-8 bytes. Split the raw
+        # header lines first so a valid 0x85 byte is not treated as a newline.
+        for raw_line in result.stdout.splitlines():
+            line = raw_line.decode("latin-1")
             if line.startswith("HTTP/"):
                 headers = {}
             elif ":" in line:
