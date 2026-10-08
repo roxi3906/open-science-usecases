@@ -64,12 +64,14 @@ class StructureTests(unittest.TestCase):
     def manifest(self, entries):
         self.write("manifest.json", json.dumps(entries, ensure_ascii=False))
 
-    def run_stage(self, stage, *args, cases=None):
+    def run_stage(self, stage, *args, cases=None, extra_env=None):
         output = self.root / ".step-output"
         output.write_text("")
-        env = {**os.environ, "GITHUB_OUTPUT": str(output)}
+        env = {**os.environ, "GITHUB_OUTPUT": str(output), "GITHUB_ACTIONS": "false"}
+        env.pop("CASES_JSON", None)
         if cases is not None:
             env["CASES_JSON"] = json.dumps(cases)
+        env.update(extra_env or {})
         result = subprocess.run(
             [sys.executable, str(SCRIPT), stage, *args], cwd=self.root,
             env=env, text=True, capture_output=True,
@@ -230,6 +232,87 @@ class StructureTests(unittest.TestCase):
     def test_invalid_base_fails_instead_of_silently_skipping(self):
         result, _ = self.run_stage("directories", "--base", "nonexistent-ref")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("nonexistent-ref", result.stderr)
+        self.assertIn("fetch-depth: 0", result.stderr)
+
+    def test_missing_file_log_identifies_case_and_tells_how_to_fix_it(self):
+        self.case()
+        (self.root / TITLE / f"{TITLE}.png").unlink()
+        self.commit()
+        result, _ = self.scan()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"{TITLE}/{TITLE}.png", result.stderr)
+        self.assertIn("Add", result.stderr)
+        self.assertIn("same name", result.stderr)
+
+    def test_metadata_log_shows_current_values_and_replacements(self):
+        entry = self.case()
+        entry["cover"]["bytes"] = 12345
+        entry["cover"]["sha256"] = "0" * 64
+        self.manifest([entry])
+        self.commit()
+        result = self.check_manifest(expected=1)
+        self.assertIn("12345", result.stderr)
+        self.assertIn(str(len(b"fixture png")), result.stderr)
+        self.assertIn("0" * 64, result.stderr)
+        self.assertIn(hashlib.sha256(b"fixture png").hexdigest(), result.stderr)
+        self.assertIn("Update", result.stderr)
+        self.assertIn("2 problems", result.stderr)
+
+    def test_manifest_json_error_includes_location_and_fix(self):
+        self.case()
+        self.commit()
+        self.write("manifest.json", '[\n{"name": }\n]')
+        result = self.check_manifest(expected=1)
+        self.assertIn("manifest.json", result.stderr)
+        self.assertIn("line 2", result.stderr)
+        self.assertIn("column", result.stderr)
+        self.assertIn("JSON", result.stderr)
+
+    def test_workflow_input_errors_explain_step_wiring(self):
+        for extra in ({}, {"CASES_JSON": "{"}, {"CASES_JSON": "[null]"},
+                      {"CASES_JSON": '[{"directory": "New Case"}]'}):
+            with self.subTest(extra=extra):
+                result, _ = self.run_stage("manifest", extra_env=extra)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("CASES_JSON", result.stderr)
+                self.assertIn("directories", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_actions_error_annotations_are_escaped_and_group_is_closed(self):
+        entry = self.case()
+        entry["cover"]["path"] = "wrong%0A\n::warning::injected"
+        self.manifest([entry])
+        self.commit()
+        scan, values = self.scan()
+        self.assertEqual(scan.returncode, 0)
+        result, _ = self.run_stage("manifest", cases=json.loads(values["cases"]),
+                                   extra_env={"GITHUB_ACTIONS": "true"})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("::group::", result.stderr)
+        annotations = [line for line in result.stderr.splitlines() if line.startswith("::error")]
+        self.assertEqual(len(annotations), 1)
+        self.assertIn("%250A", annotations[0])
+        self.assertNotIn("\n::warning::injected", result.stderr)
+        self.assertTrue(result.stderr.rstrip().endswith("::endgroup::"))
+
+    def test_no_new_cases_explains_skip_and_stdout_stays_json(self):
+        result, _ = self.scan()
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout), [])
+        self.assertIn("No new case directories", result.stderr)
+
+    def test_directory_names_cannot_inject_legacy_actions_commands(self):
+        directory = "Case ##[error]injected ##[endgroup]"
+        for extension in ("md", "png", "science"):
+            self.write(f"{directory}/{directory}.{extension}", "fixture")
+        self.commit()
+        result, values = self.scan(extra_env={"GITHUB_ACTIONS": "true"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("##[", result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)[0]["directory"], directory)
+        self.assertEqual(json.loads(values["cases"])[0]["directory"], directory)
+        self.assertEqual(result.stderr.count("::endgroup::"), 1)
 
     def test_initial_repository_push_checks_all_directories(self):
         self.case()
