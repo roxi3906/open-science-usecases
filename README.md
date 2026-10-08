@@ -39,9 +39,10 @@ against an empty tree.
 For a directory named `My New Case`, include:
 
 - `My New Case.md` and `My New Case.png`.
-- Either `My New Case.science`, or a `README.md` containing an absolute HTTP(S)
-  download link whose URL path ends in `.science`. Query strings and fragments
-  are allowed. Use percent-encoding for spaces and parentheses in the URL.
+- Either `My New Case.science`, or a nonempty `case.release_url` in the matching
+  manifest entry. It must be an absolute HTTP(S) URL whose path ends in `.science`.
+  Query strings and fragments are allowed. Use percent-encoding for spaces in
+  the URL. A per-case README is optional and is not read by the checker.
 
 Add exactly one matching entry in `manifest.json`. Its `title` must equal the
 directory name, and its `name` must be the ASCII kebab-case form (`my-new-case`).
@@ -55,16 +56,16 @@ to the corresponding same-named files in the case directory. Local byte sizes
 and SHA-256 checksums must match the actual files. Symlinks are not accepted.
 
 The `case` object additionally requires `release_url`: use an empty string for a
-local `.science` file, or an exact matching download link from the case README
-for a remotely hosted file. Keep `file_name` and `path` even when the file is
-hosted remotely. Remote sizes and checksums are checked for format only; the
+local `.science` file, or a `.science` download URL for a remotely hosted file.
+Keep `file_name` and `path` even when the file is hosted remotely. Remote sizes
+and checksums are checked for format only; the
 workflow does not download release assets. A README does not replace the required
 same-named introduction Markdown for new cases.
 
 The directory step exports a JSON array through `GITHUB_OUTPUT` as `cases`,
-including each directory's name, validity, local-file presence, and parsed
-download URLs. The manifest step receives it through the `CASES_JSON` environment
-variable. Any validation error fails the workflow and identifies the directory
+including each directory's name, validity, and local-file presence. The manifest
+step receives it through the `CASES_JSON` environment variable. Any validation
+error fails the workflow and identifies the directory
 or field in the logs.
 
 To reproduce the checks locally after committing the proposed case files, run

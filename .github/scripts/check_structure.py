@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+from ipaddress import IPv6Address
 import json
 import os
 from pathlib import Path
@@ -29,15 +30,21 @@ def regular_file(path):
     return path.is_file() and not path.is_symlink()
 
 
-def science_urls(text):
-    urls = set()
-    # Accept inline links, reference definitions, autolinks and bare URLs.
-    # Parentheses in URLs must be percent-encoded, as documented in README.
-    for url in re.findall(r"https?://[^\s<>\[\]()\"'`]+", text):
+def is_science_url(url):
+    if not isinstance(url, str) or not url or re.search(r"[\s\x00-\x1f\x7f]", url):
+        return False
+    try:
         parsed = urlsplit(url)
-        if parsed.netloc and parsed.path.endswith(".science"):
-            urls.add(url)
-    return sorted(urls)
+        # Accessing port rejects malformed and out-of-range port numbers.
+        _ = parsed.port
+        # Python 3.9 does not validate bracketed hosts during URL splitting.
+        if "[" in parsed.netloc:
+            IPv6Address(parsed.hostname)
+        # Check the asset path so download query parameters remain valid.
+        return (parsed.scheme in ("http", "https") and bool(parsed.hostname)
+                and parsed.path.endswith(".science"))
+    except ValueError:
+        return False
 
 
 def directories(base, merge_base=False, new_branch_base=None):
@@ -65,18 +72,9 @@ def directories(base, merge_base=False, new_branch_base=None):
             if not regular_file(folder / f"{directory}.{extension}"):
                 problems.append(f"missing regular file {directory}.{extension}")
         local = regular_file(folder / f"{directory}.science")
-        urls = []
-        if not local:
-            readme = folder / "README.md"
-            if not regular_file(readme):
-                problems.append("missing local .science file and README.md")
-            else:
-                urls = science_urls(readme.read_text(encoding="utf-8"))
-                if not urls:
-                    problems.append("README.md must contain an HTTP(S) link with a .science path")
         cases.append({
             "directory": directory, "name": name, "valid": not problems,
-            "has_local_science": local, "science_urls": urls,
+            "has_local_science": local,
         })
         errors.extend(f"{directory}: {problem}" for problem in problems)
     return cases, errors
@@ -127,8 +125,8 @@ def validate_resource(resource, case, key, extension, errors):
         if case["has_local_science"]:
             if release_url != "":
                 errors.append(f"{label}.release_url: must be empty for a local .science file")
-        elif release_url not in case["science_urls"]:
-            errors.append(f"{label}.release_url: must match a .science link in README.md")
+        elif not is_science_url(release_url):
+            errors.append(f"{label}.release_url: must be a nonempty HTTP(S) URL with a .science path")
     if key != "case" or case["has_local_science"]:
         path = Path(expected_path)
         if not regular_file(path):

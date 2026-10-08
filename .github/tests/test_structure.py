@@ -57,8 +57,6 @@ class StructureTests(unittest.TestCase):
             if key != "case" or not remote:
                 self.write(path, content)
         resources["case"]["release_url"] = URL if remote else ""
-        if remote:
-            self.write(f"{TITLE}/README.md", f"[Download]({URL})")
         entry = {"title": TITLE, "name": NAME, **resources}
         self.manifest([entry])
         return entry
@@ -96,16 +94,16 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(values["cases"]), [{
             "directory": TITLE, "name": NAME, "valid": True,
-            "has_local_science": True, "science_urls": [],
+            "has_local_science": True,
         }])
         self.check_manifest()
 
-    def test_remote_case_passes_and_exports_readme_url(self):
+    def test_remote_case_without_readme_passes_using_manifest_url(self):
         self.case(remote=True)
         self.commit()
         result, values = self.scan()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(json.loads(values["cases"])[0]["science_urls"], [URL])
+        self.assertFalse(json.loads(values["cases"])[0]["has_local_science"])
         self.check_manifest()
 
     def test_existing_directories_and_hidden_tooling_are_not_new_cases(self):
@@ -120,7 +118,7 @@ class StructureTests(unittest.TestCase):
     def test_required_files_cannot_be_replaced_by_readme_or_wrong_names(self):
         self.case()
         self.commit()
-        for extension in ("md", "png", "science"):
+        for extension in ("md", "png"):
             path = self.root / TITLE / f"{TITLE}.{extension}"
             renamed = path.with_name(f"wrong.{extension}")
             path.rename(renamed)
@@ -130,35 +128,24 @@ class StructureTests(unittest.TestCase):
                 self.assertFalse(json.loads(values["cases"])[0]["valid"])
             renamed.rename(path)
 
-    def test_missing_remote_readme_or_invalid_download_links_fail(self):
+    def test_remote_readme_is_not_read_or_used_for_validation(self):
         self.case(remote=True)
         self.commit()
-        for content in ("no download", "[Download](https://example.com/file.zip)",
-                        "[Download](file.science)", "https://example.com/page?file=.science"):
+        for content in (b"no download", b"[Download](https://example.com/other.science)", b"\xff"):
             with self.subTest(content=content):
-                self.write(f"{TITLE}/README.md", content)
-                result, _ = self.scan()
-                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        (self.root / TITLE / "README.md").unlink()
-        result, _ = self.scan()
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                (self.root / TITLE / "README.md").write_bytes(content)
+                self.check_manifest()
 
-    def test_readme_supports_inline_reference_autolink_and_query_string(self):
-        self.case(remote=True)
+    def test_remote_manifest_url_accepts_science_paths_with_query_or_fragment(self):
+        entry = self.case(remote=True)
         self.commit()
-        for content, url in (
-            (f'[Download]({URL} "Case file")', URL),
-            (f"[Download][case]\n\n[case]: {URL}", URL),
-            (f"<{URL}>", URL),
-            (f"[Download]({URL}?download=1#asset)", URL + "?download=1#asset"),
-            (f"[Download]({URL}?token=abc!)", URL + "?token=abc!"),
-            (f"<{URL}#asset;>", URL + "#asset;"),
-        ):
-            with self.subTest(content=content):
-                self.write(f"{TITLE}/README.md", content)
-                result, values = self.scan()
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertEqual(json.loads(values["cases"])[0]["science_urls"], [url])
+        for url in (URL, "http://example.com/other.science", "https://[::1]/case.science",
+                    "https://example.com:443/case.science", URL + "?download=1#asset",
+                    URL + "?token=abc!", URL + "#asset;"):
+            with self.subTest(url=url):
+                entry["case"]["release_url"] = url
+                self.manifest([entry])
+                self.check_manifest()
 
     def test_missing_duplicate_or_wrong_manifest_name_fails(self):
         entry = self.case()
@@ -201,14 +188,35 @@ class StructureTests(unittest.TestCase):
                     self.manifest([changed])
                     self.check_manifest(expected=1)
 
-    def test_remote_release_url_must_match_readme(self):
+    def test_remote_release_url_must_be_a_nonempty_science_url(self):
         entry = self.case(remote=True)
         self.commit()
-        for url in ("", None, "https://example.com/other.science"):
+        for url in ("", None, 12, False, [], {}, " ", "file.science",
+                    "https://example.com/file.zip", "https://example.com/page?file=.science",
+                    "https://example.com/file.science/", "ftp://example.com/file.science",
+                    "https:///file.science", "https://[invalid]/file.science",
+                    "https://example.com:not-a-port/file.science", "https://example.com:99999/file.science",
+                    "https://example.com/file.science\n", "https://exa mple.com/file.science"):
             with self.subTest(url=url):
                 entry["case"]["release_url"] = url
                 self.manifest([entry])
-                self.check_manifest(expected=1)
+                result = self.check_manifest(expected=1)
+                self.assertIn("release_url", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_readme_cannot_replace_missing_manifest_release_url(self):
+        entry = self.case(remote=True)
+        del entry["case"]["release_url"]
+        self.manifest([entry])
+        self.write(f"{TITLE}/README.md", f"[Download]({URL})")
+        self.commit()
+        self.check_manifest(expected=1)
+
+    def test_wrongly_named_science_file_still_requires_release_url(self):
+        self.case()
+        (self.root / TITLE / f"{TITLE}.science").rename(self.root / TITLE / "wrong.science")
+        self.commit()
+        self.check_manifest(expected=1)
 
     def test_malformed_manifest_fails_cleanly(self):
         self.case()
