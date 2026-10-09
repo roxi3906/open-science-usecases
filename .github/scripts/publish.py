@@ -124,6 +124,15 @@ def extracted_prefix(name):
     return name + '/extracted/'
 
 
+def file_integrity(path):
+    digest, size = hashlib.sha256(), 0
+    with path.open('rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(chunk)
+            size += len(chunk)
+    return size, digest.hexdigest()
+
+
 class S3:
     def __init__(self, target):
         uri = urlsplit(target)
@@ -148,14 +157,11 @@ class S3:
             return path.read_bytes().decode('utf-8')
 
     def upload(self, path, key):
-        # Metadata describes uploaded bytes, including rewritten session JSON,
+        # Metadata describes uploaded bytes, including unchanged package metadata,
         # and never copies an unverified checksum declaration from the manifest.
-        digest = hashlib.sha256()
-        with path.open('rb') as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b''):
-                digest.update(chunk)
+        _, checksum = file_integrity(path)
         subprocess.run(['aws', 's3', 'cp', str(path), self.target + '/' + key,
-                        '--only-show-errors', '--metadata', 'sha256=' + digest.hexdigest()], check=True)
+                        '--only-show-errors', '--metadata', 'sha256=' + checksum], check=True)
 
     def clear_extracted(self, name):
         # Trailing slash prevents deleting similarly named sibling prefixes.
@@ -172,13 +178,18 @@ def apply(root, plan, s3):
             raise ValueError('All packages must be extracted before publication')
         keys = {item['key'] for item in plan['files']}
         for package in packages:
-            if extracted_prefix(package['name']) + 'session.json' not in keys:
-                raise ValueError('Extracted session is missing from the upload plan')
+            for metadata in ('session.json', 'records.json', 'manifest.json'):
+                if extracted_prefix(package['name']) + metadata not in keys:
+                    raise ValueError('Extracted metadata is missing from the upload plan: ' + metadata)
     # Preflight all files, even plans without packages, before any remote writes.
+    prefixes = tuple(extracted_prefix(package['name']) for package in packages)
     for item in plan['files']:
         path = root / item['path']
         if not path.is_file() or path.is_symlink():
             raise ValueError('Planned upload file is missing or invalid: ' + item['path'])
+        if item['key'].startswith(prefixes):
+            if file_integrity(path) != (item.get('bytes'), item.get('sha256')):
+                raise ValueError('Staged extraction size or checksum mismatch: ' + item['key'])
     for package in packages:
         s3.clear_extracted(package['name'])
     # Do not depend on caller ordering to keep the publication index last.
