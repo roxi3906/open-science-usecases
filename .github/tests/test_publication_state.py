@@ -290,9 +290,19 @@ class HistoryTests(GitFixture):
 
     def test_covered_push_skips_and_stale_manual_cannot_roll_back(self):
         self.successful(2, self.b, 'workflow_dispatch')
-        self.assertFalse(self.admit(3, self.base, self.a)['proceed'])
+        covered = self.admit(3, self.base, self.a)
+        self.assertFalse(covered['proceed'])
+        self.assertIn('covered', covered.get('reason', ''))
+        self.assertIn(self.b, covered['reason'])
         with self.assertRaisesRegex(ValueError, 'older'):
             self.admit(4, None, self.a, 'workflow_dispatch')
+
+    def test_duplicate_target_explains_why_uploads_are_skipped(self):
+        self.successful(2, self.a)
+        duplicate = self.admit(3, self.base, self.a)
+        self.assertFalse(duplicate['proceed'])
+        self.assertIn('already', duplicate.get('reason', ''))
+        self.assertIn(self.a, duplicate['reason'])
 
     def test_baseline_follows_ancestry_not_run_creation_order(self):
         self.successful(2, self.b, 'workflow_dispatch')

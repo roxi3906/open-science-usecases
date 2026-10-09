@@ -2,6 +2,8 @@
 
 The `Check and publish cases` workflow owns one native concurrency queue for main. The lock covers admission, structure and declaration checks, planning, uploading, and finalization. Pull requests run checks and the test suite without publishing or changing publication state. Main batches omit the test suite, which is verified on the PR.
 
+When upload preparation or publication is skipped, open `Explain upload preparation and publication decision` in the check job, or read the run summary. It reports PR-only checking, already-published targets, admission/check failures, cancellation, and empty upload plans, along with the decision inputs. A skipped step itself has no execution log. The diagnostic step uses `always()` and needs no checkout or credentials, so it can also report earlier failures; forced termination or a job that never starts can still prevent diagnostics from running. A prepared nonempty plan only means publication is eligible to run, not that uploads succeeded.
+
 ## Publication history and migration
 
 GitHub Actions attempt-one history is the publication record. No state file, state branch, deployment record or artifact is created or updated. An existing `check-publish-state` branch is ignored and left untouched.

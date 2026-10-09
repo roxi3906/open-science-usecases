@@ -338,7 +338,8 @@ class Controller:
             self.audit(runs, successes)
             validate_range(self.root, before, after)
             if self.is_ancestor(after, base):
-                return {'proceed': False, 'before': before, 'after': after}
+                return {'proceed': False, 'before': before, 'after': after,
+                        'reason': f'Target {after} is already covered by the successful baseline {base}.'}
             if before != base:
                 raise ValueError('Push predecessor does not match the successful baseline: missing or out-of-order batch. ' + RECOVER)
         else:
@@ -390,6 +391,8 @@ def main():
                    outputs.get('has_uploads', ''), outputs.get('proceed', ''))
         return
     outputs = ctl.enter(before=event.get('before'), bootstrap=os.environ.get('INITIAL_BASELINE') or None)
+    if not outputs['proceed']:
+        print('Publication skipped: ' + outputs['reason'])
     with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
         for key, value in outputs.items():
             stream.write(key + '=' + (str(value).lower() if isinstance(value, bool) else value) + '\n')
