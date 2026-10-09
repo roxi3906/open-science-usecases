@@ -111,6 +111,45 @@ jobs:
           AFTER_SHA: ${{ steps.admit.outputs.after }}
         run: python3 .github/scripts/publish.py --before "$BEFORE_SHA" --after "$AFTER_SHA" --prepare "$RUNNER_TEMP/publication-plan.json"
 
+      - name: Explain upload preparation and publication decision
+        if: always()
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          JOB_STATUS: ${{ job.status }}
+          ADMISSION_OUTCOME: ${{ steps.admit.outcome }}
+          PROCEED: ${{ steps.admit.outputs.proceed }}
+          ADMISSION_REASON: ${{ steps.admit.outputs.reason }}
+          PLAN_OUTCOME: ${{ steps.plan.outcome }}
+          HAS_UPLOADS: ${{ steps.plan.outputs.has_uploads }}
+        run: |
+          if [ "$PLAN_OUTCOME" = "failure" ]; then
+            reason='Upload preparation failed. See Prepare uploads from the checked manifest difference for the error; publication will not run.'
+          elif [ "$JOB_STATUS" = "cancelled" ] || [ "$PLAN_OUTCOME" = "cancelled" ]; then
+            reason='The check job or upload preparation was cancelled; publication will not run.'
+          elif [ "$ADMISSION_OUTCOME" = "failure" ]; then
+            reason='Publication admission failed. See Admit this batch under the shared serial lock for the error and recovery instructions; upload preparation and publication are skipped.'
+          elif [ "$JOB_STATUS" = "failure" ]; then
+            reason='An earlier step failed; upload preparation and publication are skipped. See the failed step for details.'
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            reason='Pull requests only run checks and tests. Upload preparation and publication are skipped; publishing requires a main push or workflow_dispatch on main.'
+          elif [ "$PROCEED" = "false" ] && [ -n "$ADMISSION_REASON" ]; then
+            reason="Upload preparation and publication are skipped: $ADMISSION_REASON"
+          elif [ "$PROCEED" != "true" ]; then
+            reason='Publication admission did not grant permission to proceed; upload preparation and publication are skipped. See the admission step and its outcome below.'
+          elif [ "$PLAN_OUTCOME" = "success" ] && [ "$HAS_UPLOADS" = "false" ]; then
+            reason='Upload preparation completed with an empty plan because manifest.json is unchanged in the checked range. Publication is skipped; file-only changes do not trigger uploads.'
+          elif [ "$PLAN_OUTCOME" = "success" ] && [ "$HAS_UPLOADS" = "true" ]; then
+            reason='Upload preparation completed with pending uploads; the publish job is eligible to run. This does not mean uploads have completed.'
+          else
+            reason='Unexpected upload preparation outcome or missing upload output; inspect the step outcomes below and the preparation log.'
+          fi
+          details="event=$EVENT_NAME; job=$JOB_STATUS; admission=$ADMISSION_OUTCOME; proceed=${PROCEED:-unset}; preparation=$PLAN_OUTCOME; has_uploads=${HAS_UPLOADS:-unset}"
+          printf '::notice::%s\n%s\n' "$reason" "$details"
+          {
+            printf '### Upload preparation and publication\n\n%s\n\n' "$reason"
+            printf 'Decision inputs: `%s`\n' "$details"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   publish:
     needs: check-structure
     if: needs.check-structure.outputs.has_uploads == 'true'
