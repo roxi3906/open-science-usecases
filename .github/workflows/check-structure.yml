@@ -114,7 +114,7 @@ jobs:
     needs: check-structure
     if: needs.check-structure.outputs.has_uploads == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Reject native reruns even when previous check outputs are reused
         run: |
@@ -134,7 +134,12 @@ jobs:
           PLAN_JSON: ${{ needs.check-structure.outputs.plan }}
         run: python3 -c 'import os, pathlib; pathlib.Path(os.environ["RUNNER_TEMP"], "publication-plan.json").write_text(os.environ["PLAN_JSON"], encoding="utf-8")'
 
-      - name: Upload resources, then manifest
+      - name: Download and extract changed science packages
+        env:
+          CASE_FILE_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ needs.check-structure.outputs.after }}
+        run: python3 .github/scripts/extract_science.py --plan "$RUNNER_TEMP/publication-plan.json" --output "$RUNNER_TEMP/science-publication"
+
+      - name: Replace extracted content and upload resources, then manifest
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
