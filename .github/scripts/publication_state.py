@@ -1,98 +1,128 @@
 #!/usr/bin/env python3
-"""Admission and failure latch for the native, whole-workflow publication queue."""
+"""Derive publication admission and failure blocking from GitHub Actions history."""
 import argparse
-import base64
+from datetime import datetime
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 from urllib.error import HTTPError
-from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.parse import quote, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from manifest_diff import ancestor, commit_exists, validate_range
 
-BRANCH = 'check-publish-state'
 WAITING = {'queued', 'pending', 'waiting', 'requested'}
 RECOVER = 'Use workflow_dispatch on main to recover the final net range.'
+WORKFLOW = '.github/workflows/check-structure.yml'
+LEGACY = '.github/workflows/publish.yml'
+ADMIT = 'Admit this batch under the shared serial lock'
+PLAN = 'Prepare uploads from the checked manifest difference'
+FINISH = 'Validate publication result and cancel waiters'
+OLD_FINISH = 'Record provisional completion or latch failure and cancel waiters'
+
+
+def workflow(run):
+    return run['path'].split('@', 1)[0]
+
+
+def order(run):
+    # Run numbers belong to individual workflows; compare creation across both pipelines.
+    return run['created_at'], run['id']
+
+
+def passed(job, step):
+    return (job.get('status') == 'completed' and job.get('conclusion') == 'success' and
+            any(item['name'] == step and item['conclusion'] == 'success'
+                for item in job.get('steps', [])))
+
+
+def job_time(job, field):
+    # GitHub's job timestamps, unlike run creation/update times, bound actual execution.
+    value = job.get(field)
+    try:
+        result = datetime.fromisoformat(value.replace('Z', '+00:00')) if isinstance(value, str) else None
+        if result is None or result.utcoffset() is None:
+            raise ValueError('missing timezone-aware timestamp')
+    except ValueError as error:
+        raise ValueError('Missing or invalid legacy publication timing evidence: ' + field) from error
+    return result
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 class GitHub:
-    """State commits use fast-forward ref updates as compare-and-swap."""
-    def __init__(self, repository, workflow_id):
+    """Read retained attempt-one evidence; only waiter cancellation needs write access."""
+    def __init__(self, repository):
         self.url = os.environ.get('GITHUB_API_URL', 'https://api.github.com') + '/repos/' + repository
-        self.workflow_id = workflow_id
 
-    def request(self, method, path, data=None, missing=False):
-        body = None if data is None else json.dumps(data).encode()
-        req = Request(self.url + '/' + path, data=body, method=method, headers={
+    def request(self, method, path, text=False):
+        req = Request(self.url + '/' + path, method=method, headers={
             'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
-            'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json',
+            'Accept': 'application/vnd.github+json',
             'X-GitHub-Api-Version': '2022-11-28',
         })
         try:
-            with urlopen(req, timeout=30) as response:
+            with build_opener(NoRedirect).open(req, timeout=30) as response:
                 raw = response.read()
-                return json.loads(raw) if raw else None
         except HTTPError as error:
-            if missing and error.code == 404:
-                return None
-            raise ValueError(f'GitHub {method} {path} failed: HTTP {error.code}; state was not assumed successful') from error
-
-    def read(self):
-        ref = self.request('GET', 'git/ref/heads/' + BRANCH, missing=True)
-        if ref is None:
-            return None, None
-        revision = ref['object']['sha']
-        content = self.request('GET', 'contents/state.json?ref=' + revision)
-        if content['encoding'] != 'base64':
-            raise ValueError('Unsupported publication state encoding')
-        return json.loads(base64.b64decode(content['content'])), revision
-
-    def write(self, state, revision):
-        tree = self.request('POST', 'git/trees', {'tree': [{
-            'path': 'state.json', 'mode': '100644', 'type': 'blob',
-            'content': json.dumps(state, sort_keys=True) + '\n',
-        }]})
-        commit = self.request('POST', 'git/commits', {
-            'message': 'chore: record publication queue state', 'tree': tree['sha'],
-            'parents': [revision] if revision else [],
-        })
-        if revision:
-            self.request('PATCH', 'git/refs/heads/' + BRANCH, {'sha': commit['sha'], 'force': False})
-        else:
-            self.request('POST', 'git/refs', {'ref': 'refs/heads/' + BRANCH, 'sha': commit['sha']})
-        return commit['sha']
+            # Log downloads redirect to signed storage URLs. Never forward the GitHub token.
+            if text and error.code == 302:
+                location = error.headers['Location']
+                if urlsplit(location).scheme != 'https':
+                    raise ValueError('GitHub log redirect must use HTTPS') from error
+                with urlopen(location, timeout=30) as response:
+                    raw = response.read()
+            else:
+                raise ValueError(f'GitHub {method} {path} failed: HTTP {error.code}; publication evidence unavailable') from error
+        if text:
+            return raw.decode('utf-8-sig')
+        return json.loads(raw) if raw else None
 
     def run(self, run_id):
-        # Latest-attempt conclusions change on native reruns; only attempt 1 is authoritative.
-        return self.request('GET', f'actions/runs/{run_id}/attempts/1')
+        # Native reruns never replace attempt one's publication result.
+        run = self.request('GET', f'actions/runs/{run_id}/attempts/1')
+        if run['id'] != run_id or run['run_attempt'] != 1:
+            raise ValueError('Cannot verify attempt-one run identity')
+        return run
 
-    def history(self, since):
-        found, seen = [], set()
-        page = 1
-        # The 1,000-result cap applies to filtered queries (including branch).
-        # Read this workflow's unfiltered pages, then select main runs locally.
-        # Never discard older evidence just to confirm a manual recovery.
+    def pages(self, path, key):
+        seen, page = set(), 1
         while True:
-            response = self.request('GET', f'actions/workflows/{self.workflow_id}/runs?per_page=100&page={page}')
-            runs = response['workflow_runs']
-            fresh = [run for run in runs if run['id'] not in seen]
-            if runs and not fresh:
-                raise ValueError('Publication history pagination did not advance; cannot establish queue order. ' + RECOVER)
-            for run in fresh:
-                seen.add(run['id'])
-                if (run['run_number'] > since and run['head_branch'] == 'main' and
-                        run['event'] in ('push', 'workflow_dispatch')):
-                    found.append(self.run(run['id']) if run['run_attempt'] != 1 else run)
-            if len(runs) < 100 or any(run['run_number'] <= since for run in runs):
-                return found
+            rows = self.request('GET', f'{path}?per_page=100&page={page}')[key]
+            fresh = [row for row in rows if row['id'] not in seen]
+            if rows and not fresh:
+                raise ValueError('Publication history pagination did not advance. ' + RECOVER)
+            for row in fresh:
+                seen.add(row['id'])
+                yield row
+            if len(rows) < 100:
+                return
             page += 1
 
+    def history(self):
+        # Repository-wide, unfiltered pagination also finds the deleted legacy workflow
+        # and avoids GitHub's 1,000-result cap for filtered run queries.
+        found = []
+        for run in self.pages('actions/runs', 'workflow_runs'):
+            current = workflow(run) == WORKFLOW and run['event'] in ('push', 'workflow_dispatch')
+            legacy = workflow(run) == LEGACY and run['event'] == 'workflow_run'
+            if run['head_branch'] == 'main' and (current or legacy):
+                found.append(self.run(run['id']) if run['run_attempt'] != 1 else run)
+        return found
+
+    def jobs(self, run_id):
+        return list(self.pages(f'actions/runs/{run_id}/attempts/1/jobs', 'jobs'))
+
+    def job_log(self, job_id):
+        return self.request('GET', f'actions/jobs/{job_id}/logs', text=True)
+
     def ancestor(self, before, after):
-        # Waiters may target commits pushed after this runner fetched its tree.
-        # Compare GitHub commit metadata instead of fetching resource contents.
         comparison = self.request('GET', 'compare/' + quote(before, safe='') + '...' + quote(after, safe=''))
         if comparison['status'] not in ('ahead', 'behind', 'identical', 'diverged'):
             raise ValueError('Unknown GitHub commit relationship')
@@ -105,14 +135,12 @@ class GitHub:
 class Controller:
     def __init__(self, root, api, run):
         self.root, self.api, self.run = root, api, run
-        self.state = self.revision = None
         self.relationships = {}
 
     def is_ancestor(self, before, after):
         pair = (before, after)
         if pair not in self.relationships:
-            # Recovery history is already in the full checkout. Avoid spending
-            # one API request per old run; only later arrivals need remote data.
+            # Only queued targets newer than this checkout require an API comparison.
             objects = subprocess.run(
                 ['git', 'cat-file', '--batch-check=%(objecttype)'], cwd=self.root,
                 input=f'{before}^{{commit}}\n{after}^{{commit}}\n',
@@ -129,21 +157,160 @@ class Controller:
     def guard(self):
         if self.run['run_attempt'] != 1:
             raise ValueError('Native reruns are disabled. ' + RECOVER)
-        if self.run['head_branch'] != 'main' or self.run['event'] not in ('push', 'workflow_dispatch'):
+        if (self.run['head_branch'] != 'main' or workflow(self.run) != WORKFLOW or
+                self.run['event'] not in ('push', 'workflow_dispatch')):
             raise ValueError('Publication admission is restricted to main push/workflow_dispatch')
 
-    def save(self):
-        self.revision = self.api.write(self.state, self.revision)
+    def publication_jobs(self, run):
+        records = self.api.jobs(run['id'])
+        jobs = {job['name']: job for job in records}
+        if not jobs or len(jobs) != len(records):
+            raise ValueError('Missing or ambiguous publication job evidence')
+        return jobs
+
+    def publication(self, run, jobs=None):
+        if run['status'] != 'completed' or run['conclusion'] != 'success':
+            return None
+        if jobs is None:
+            jobs = self.publication_jobs(run)
+        publish = jobs.get('publish', {})
+        if workflow(run) == LEGACY:
+            if not passed(publish, 'Publish local resources to S3'):
+                return None  # Superseded legacy runs are green without uploading anything.
+            if not passed(publish, 'Check out the validated commit'):
+                raise ValueError('Cannot verify legacy publication checkout')
+            log = self.api.job_log(publish['id'])
+            # workflow_run.head_sha is the default-branch SHA, not necessarily the
+            # triggering SHA. Use checkout's full, actual commit output instead.
+            shas = re.findall(r'\[command\][^\n]*git log -1 --format=%H\r?\n[^\S\n]*\S+ ([0-9a-f]{40})\s*(?:\n|$)', log)
+            if len(shas) != 1:
+                raise ValueError('Missing or ambiguous legacy checkout commit in retained logs')
+            return {**run, 'head_sha': shas[0]}
+        check, final = jobs.get('check-structure', {}), jobs.get('finalize', {})
+        if not check:
+            raise ValueError('Missing publication check job evidence')
+        steps = {step['name']: step['conclusion'] for step in check.get('steps', [])}
+        if ADMIT not in steps or steps.get(PLAN) == 'skipped':
+            return None  # Check-only old workflows and already-covered pushes do not publish.
+        if not passed(check, PLAN):
+            raise ValueError('Missing successful publication plan evidence')
+        # Recognize both combined-workflow generations; extraction must finish before
+        # the newer publisher can replace remote package contents and publish the index.
+        uploaded = (passed(publish, 'Upload resources, then manifest') or
+                    (passed(publish, 'Download and extract changed science packages') and
+                     passed(publish, 'Replace extracted content and upload resources, then manifest')))
+        empty = publish.get('status') == 'completed' and publish.get('conclusion') == 'skipped'
+        if (not passed(check, ADMIT) or
+                not (passed(final, FINISH) or passed(final, OLD_FINISH)) or
+                not (uploaded or empty)):
+            raise ValueError('Cannot verify successful check-publish publication')
+        # The finalizer verifies that a skipped publish was an explicitly empty plan.
+        return run
+
+    def legacy_publications(self, runs):
+        candidates, verified = [], []
+        for run in runs:
+            if (workflow(run) != LEGACY or run['status'] != 'completed' or
+                    run['conclusion'] != 'success'):
+                continue
+            jobs = self.publication_jobs(run)
+            publish = jobs.get('publish', {})
+            if not passed(publish, 'Publish local resources to S3'):
+                continue
+            if not passed(publish, 'Check out the validated commit'):
+                raise ValueError('Cannot verify legacy publication checkout')
+            started, completed = job_time(publish, 'started_at'), job_time(publish, 'completed_at')
+            if completed < started:
+                raise ValueError('Invalid legacy publication timing evidence: completion before start')
+            candidates.append((completed, started, run, jobs))
+        for completed, started, run, jobs in sorted(candidates, key=lambda item: item[0], reverse=True):
+            # A verified full sync supersedes earlier writes only when they ended before
+            # it began and their default-branch snapshot is within its actual checkout.
+            # Overlapping/tied jobs and unknown or uncovered commits still need logs.
+            if any(completed < later_start and self.is_ancestor(run['head_sha'], later['head_sha'])
+                   for later, later_start in verified):
+                continue
+            publication = self.publication(run, jobs)
+            publication['publication_started_at'] = started
+            verified.append((publication, started))
+        return [run for run, _ in verified]
+
+    def successful_publications(self, runs):
+        current, recoveries, latest = [], [], None
+        # Query job evidence only when it can extend a verified baseline or recovery.
+        # Scanning every old successful job would eventually exhaust GITHUB_TOKEN's budget.
+        candidates = sorted((run for run in runs if workflow(run) == WORKFLOW and
+                             run['status'] == 'completed' and run['conclusion'] == 'success'),
+                            key=order, reverse=True)
+        for run in candidates:
+            covered_target = latest and self.is_ancestor(run['head_sha'], latest['head_sha'])
+            covered_recovery = run['event'] != 'workflow_dispatch' or any(
+                self.is_ancestor(run['head_sha'], recovery['head_sha']) for recovery in recoveries)
+            if covered_target and covered_recovery:
+                continue
+            verified = self.publication(run)
+            if verified:
+                current.append(verified)
+                latest = self.baseline(current)
+                if verified['event'] == 'workflow_dispatch':
+                    recoveries.append(verified)
+        # Once a modern recovery succeeds, old publisher logs are no longer needed.
+        if recoveries:
+            return current
+        return current + self.legacy_publications(runs)
+
+    def baseline(self, successes):
+        latest = None
+        for run in successes:
+            if latest is None or self.is_ancestor(latest['head_sha'], run['head_sha']):
+                latest = run
+            elif not self.is_ancestor(run['head_sha'], latest['head_sha']):
+                raise ValueError('Successful publication targets have divergent history')
+        return latest
+
+    def audit(self, runs, successes):
+        recoveries = [run for run in successes if run['event'] in ('workflow_dispatch', 'workflow_run')]
+        for run in runs:
+            if run['id'] == self.run['id']:
+                continue
+            if run['status'] in WAITING:
+                continue  # The exact push predecessor check detects missing dependencies.
+            if run['status'] != 'completed':
+                raise ValueError('Preceding publication is not terminal; refusing to wait under the serial lock. ' + RECOVER)
+            if run['conclusion'] == 'success':
+                continue
+            # Covered pushes are obsolete even when canceled after recovery. Manual
+            # failures must also predate recovery; a new failed recovery stays blocking.
+            if any(not (workflow(run) == LEGACY and workflow(recovery) == LEGACY) and
+                   (run['event'] == 'push' or order(run) < order(recovery)) and
+                   self.is_ancestor(run['head_sha'], recovery['head_sha'])
+                   for recovery in recoveries):
+                continue
+            # Legacy runs can start out of creation order. A later full sync also
+            # repairs failed writes, but only after every failed-run job has ended.
+            legacy_recoveries = [recovery for recovery in recoveries
+                                 if workflow(run) == LEGACY and workflow(recovery) == LEGACY and
+                                 self.is_ancestor(run['head_sha'], recovery['head_sha'])]
+            if legacy_recoveries:
+                try:
+                    jobs = self.publication_jobs(run).values()
+                    if any(job.get('status') != 'completed' for job in jobs):
+                        raise ValueError('Missing terminal legacy failure job evidence')
+                    completed = max(job_time(job, 'completed_at') for job in jobs)
+                except ValueError as error:
+                    raise ValueError(str(error) + '. ' + RECOVER) from error
+                if any(completed < recovery['publication_started_at'] for recovery in legacy_recoveries):
+                    continue
+            raise ValueError(f"Batch {run['id']} failed/cancelled without a covering recovery. " + RECOVER)
 
     def cancel_waiting(self):
-        runs = self.api.history(self.state['audit_after'])
-        waiting = [run for run in runs if run['id'] != self.run['id'] and run['status'] in WAITING]
+        runs = self.api.history()
+        waiting = [run for run in runs if workflow(run) == WORKFLOW and
+                   run['id'] != self.run['id'] and run['status'] in WAITING]
         recoveries = [run for run in waiting if run['event'] == 'workflow_dispatch']
         for run in waiting:
             if run['event'] != 'push':
                 continue
-            # A queued manual recovery is a barrier. Preserve later targets; the
-            # admission gate still requires an exact before==baseline boundary.
             if any(recovery['head_sha'] != run['head_sha'] and
                    self.is_ancestor(recovery['head_sha'], run['head_sha']) for recovery in recoveries):
                 continue
@@ -151,131 +318,55 @@ class Controller:
             if fresh['status'] in WAITING and fresh['event'] == 'push':
                 self.api.cancel(run['id'])
 
-    def block(self, reason):
-        self.state['blocked'] = reason
-        self.save()  # Latch failure before any best-effort cancellation API calls.
-        self.cancel_waiting()
-        raise ValueError(reason + ' ' + RECOVER)
-
-    def resolve_active(self):
-        active = self.state['active']
-        if not active:
-            return
-        run = self.api.run(active['run_id'])
-        if (run['head_sha'] != active['after'] or run['event'] != active['event'] or
-                run['run_attempt'] != 1 or run['run_number'] != active['number']):
-            self.block('Cannot verify the preceding batch identity')
-        if run['status'] != 'completed':
-            self.block('Preceding batch is not terminal; refusing to wait while holding the serial lock')
-        if active['ready'] and run['conclusion'] == 'success':
-            self.state['baseline'] = active['after']
-            if active['event'] == 'workflow_dispatch':
-                # A recovery acknowledges older targets by ancestry, not run
-                # creation order. Retain any older, still-uncovered waiter/failure.
-                uncovered = [item['run_number'] - 1 for item in self.api.history(self.state['audit_after'])
-                             if item['run_number'] < active['number'] and
-                             not self.is_ancestor(item['head_sha'], active['after'])]
-                self.state['audit_after'] = min([active['number'], *uncovered])
-                self.state['recovery'] = {'after': active['after'], 'number': active['number']}
-            elif self.run['event'] != 'workflow_dispatch':
-                # Run creation order is not admission order. Keep older unresolved
-                # or failed runs visible until recovery covers them; their later
-                # cancellation must not disappear behind a newer run number.
-                unsettled = [item['run_number'] - 1 for item in self.api.history(self.state['audit_after'])
-                             if item['id'] != active['run_id'] and
-                             (item['status'] != 'completed' or item.get('conclusion') != 'success')]
-                self.state['audit_after'] = min([active['number'], *unsettled])
-            self.state['blocked'] = None
-        else:
-            self.state['blocked'] = f"Batch {active['run_id']} did not complete check-publish successfully"
-        self.state['active'] = None
-
-    def audit_failures(self):
-        for run in self.api.history(self.state['audit_after']):
-            if run['id'] == self.run['id'] or run['status'] != 'completed':
-                continue
-            # Old push batches covered by a confirmed recovery do not block again.
-            if run['event'] == 'push' and ancestor(self.root, run['head_sha'], self.state['baseline']):
-                continue
-            recovery = self.state.get('recovery')
-            if (run['event'] == 'workflow_dispatch' and recovery and
-                    run['run_number'] < recovery['number'] and
-                    self.is_ancestor(run['head_sha'], recovery['after'])):
-                continue
-            if run['conclusion'] != 'success':
-                self.block(f"Batch {run['id']} failed/cancelled before completion (including before admission)")
-
     def enter(self, before=None, bootstrap=None):
         self.guard()
-        self.state, self.revision = self.api.read()
+        runs = self.api.history()
+        successes = self.successful_publications(runs)
+        baseline = self.baseline(successes)
         after = self.run['head_sha']
-        if self.state is None:
+        if baseline:
+            if bootstrap:
+                raise ValueError('initial_baseline cannot override successful publication history')
+            base = baseline['head_sha']
+        else:
             if self.run['event'] != 'workflow_dispatch' or not bootstrap:
-                raise ValueError('Missing reliable baseline. Manually sync first, then dispatch with initial_baseline.')
-            validate_range(self.root, bootstrap, after)
-            self.state = {'version': 1, 'baseline': bootstrap, 'blocked': None, 'active': None, 'recovery': None,
-                          'audit_after': self.run['run_number'] - 1}
-        elif bootstrap:
-            raise ValueError('initial_baseline is only allowed when the state branch does not exist')
-        if self.state.get('version') != 1 or not self.state.get('baseline'):
-            raise ValueError('Missing or unsupported publication state; no full-sync fallback')
-        self.resolve_active()
-        try:
-            commit_exists(self.root, self.state['baseline'])
-            commit_exists(self.root, after)
-            if self.run['event'] == 'push':
-                if self.state['blocked']:
-                    self.block(self.state['blocked'])
-                self.audit_failures()
-                validate_range(self.root, before, after)
-            baseline = self.state['baseline']
-            if after != baseline and ancestor(self.root, after, baseline):
-                if self.state['blocked']:
-                    self.block('Recovery target is older than the successful baseline')
-                self.save()
-                return {'proceed': False, 'before': baseline, 'after': after}
-            if self.run['event'] == 'push' and after == baseline:
-                self.save()
-                return {'proceed': False, 'before': before, 'after': after}
-            if self.run['event'] == 'push' and before != baseline:
-                self.block('Push predecessor does not match the successful baseline: missing or out-of-order batch')
-            if self.run['event'] == 'workflow_dispatch':
-                before = baseline
+                raise ValueError('Missing reliable publication baseline in Actions history. Manually sync first, then dispatch with initial_baseline.')
+            base = bootstrap
+        commit_exists(self.root, base)
+        commit_exists(self.root, after)
+        if self.run['event'] == 'push':
+            self.audit(runs, successes)
             validate_range(self.root, before, after)
-        except (ValueError, subprocess.CalledProcessError) as error:
-            # API errors/invalid ancestry also fail closed; never substitute a range.
-            if not self.state['blocked']:
-                self.state['blocked'] = str(error)
-                self.save()
-                self.cancel_waiting()
-            raise
-        self.state['active'] = {'run_id': self.run['id'], 'number': self.run['run_number'],
-                                'before': before, 'after': after, 'event': self.run['event'], 'ready': False}
-        self.save()
+            if self.is_ancestor(after, base):
+                return {'proceed': False, 'before': before, 'after': after}
+            if before != base:
+                raise ValueError('Push predecessor does not match the successful baseline: missing or out-of-order batch. ' + RECOVER)
+        else:
+            if after != base and self.is_ancestor(after, base):
+                raise ValueError('Recovery target is older than the successful baseline')
+            # A manual recovery bypasses failed terminal runs, never an active publisher.
+            if any(run['id'] != self.run['id'] and run['status'] not in WAITING | {'completed'} for run in runs):
+                raise ValueError('Preceding publication is not terminal. ' + RECOVER)
+            before = base
+        validate_range(self.root, before, after)
+        print(f"Publication baseline: {base}" + (f" (run {baseline['id']})" if baseline else ' (explicit initial sync)'))
         return {'proceed': True, 'before': before, 'after': after}
 
-    def finish(self, checked, published, has_uploads):
+    def finish(self, checked, published, has_uploads, proceed='true'):
         self.guard()
-        self.state, self.revision = self.api.read()
-        if not self.state or not self.state.get('active'):
-            return  # Rejected/covered admission has no owned batch to complete.
-        active = self.state['active']
-        if active['run_id'] != self.run['id'] or active['after'] != self.run['head_sha']:
-            raise ValueError('Finalizer does not own the active batch; no state changed')
         current = self.api.run(self.run['id'])
+        if current['status'] != 'in_progress' or current['head_sha'] != self.run['head_sha']:
+            raise ValueError('Finalizer no longer owns an active run; no waiters cancelled')
         success = (checked == 'success' and
                    ((has_uploads == 'true' and published == 'success') or
-                    (has_uploads == 'false' and published == 'skipped')) and
-                   current['status'] == 'in_progress' and current.get('conclusion') is None)
-        active['ready'] = success
+                    (has_uploads == 'false' and published == 'skipped') or
+                    (proceed == 'false' and published == 'skipped')))
         if not success:
-            self.state['blocked'] = f"Batch {self.run['id']} failed or was interrupted"
-        self.save()
-        if not success:
+            # The failed attempt itself is the persistent latch, even if cancellation
+            # APIs fail or this finalizer is interrupted. Later admission audits it.
             self.cancel_waiting()
             raise ValueError('Batch did not complete. ' + RECOVER)
-        # This is provisional: only the terminal attempt-1 conclusion can promote
-        # the baseline at the next admission. Cancellation after this step is safe.
+        # No state is written. Only the entire attempt's final success is authoritative.
 
 
 def main():
@@ -287,15 +378,16 @@ def main():
     if os.environ['GITHUB_REF'] != 'refs/heads/main':
         raise ValueError('Manual recovery must target main')
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-    api = GitHub(os.environ['GITHUB_REPOSITORY'], 'check-structure.yml')
+    api = GitHub(os.environ['GITHUB_REPOSITORY'])
     run = api.run(int(os.environ['GITHUB_RUN_ID']))
     if run['head_sha'] != os.environ['GITHUB_SHA'] or (run['event'] == 'push' and event.get('after') != run['head_sha']):
         raise ValueError('Run target differs from the fixed event SHA')
     ctl = Controller(Path.cwd(), api, run)
     if args.command == 'finish':
         needs = json.loads(os.environ['BATCH_RESULTS'])
+        outputs = needs['check-structure']['outputs']
         ctl.finish(needs['check-structure']['result'], needs['publish']['result'],
-                   needs['check-structure']['outputs'].get('has_uploads', ''))
+                   outputs.get('has_uploads', ''), outputs.get('proceed', ''))
         return
     outputs = ctl.enter(before=event.get('before'), bootstrap=os.environ.get('INITIAL_BASELINE') or None)
     with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:

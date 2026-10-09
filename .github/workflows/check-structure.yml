@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       initial_baseline:
-        description: 'First setup ONLY: full SHA already manually synced to S3; leave empty for recovery'
+        description: 'First setup ONLY: only if no successful publication history exists; full SHA already synced to S3'
         required: false
         type: string
   pull_request:
@@ -27,9 +27,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
       actions: write
     outputs:
+      proceed: ${{ steps.admit.outputs.proceed }}
       before: ${{ steps.admit.outputs.before }}
       after: ${{ steps.admit.outputs.after }}
       has_uploads: ${{ steps.plan.outputs.has_uploads }}
@@ -157,10 +158,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: write
+      contents: read
       actions: write
     steps:
-      - name: Reject native reruns without changing publication state
+      - name: Reject native reruns before finalization
         run: |
           if [ "$GITHUB_RUN_ATTEMPT" != "1" ]; then
             echo 'Native reruns are disabled. Use workflow_dispatch on main.' >&2
@@ -174,7 +175,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Record provisional completion or latch failure and cancel waiters
+      - name: Validate publication result and cancel waiters
         env:
           GH_TOKEN: ${{ github.token }}
           BATCH_RESULTS: ${{ toJSON(needs) }}
