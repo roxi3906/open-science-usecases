@@ -1,5 +1,28 @@
 [
   {
+    "title": "A Million Examples - Is That a Proof",
+    "name": "a-million-examples-is-that-a-proof",
+    "cover": {
+      "file_name": "A Million Examples - Is That a Proof.png",
+      "bytes": 2717313,
+      "sha256": "2bfcfec65a748ace73707b5310bfa047673394eb30286aaa2a250d706157e900",
+      "path": "A Million Examples - Is That a Proof/A Million Examples - Is That a Proof.png"
+    },
+    "case": {
+      "file_name": "A Million Examples - Is That a Proof.science",
+      "bytes": 855771,
+      "sha256": "7837410c9c39d9a3c7f7a845d91aadeea8eb3eef3dafe468be68eedfc1925d57",
+      "path": "A Million Examples - Is That a Proof/A Million Examples - Is That a Proof.science",
+      "release_url": ""
+    },
+    "introduction": {
+      "file_name": "A Million Examples - Is That a Proof.md",
+      "bytes": 4788,
+      "sha256": "c6516b1efbd1e3d775afd631822e7e15d20bc7c22631baa502d894182d3ade2d",
+      "path": "A Million Examples - Is That a Proof/A Million Examples - Is That a Proof.md"
+    }
+  },
+  {
     "title": "Can a Simple Algorithm Beat AI at Wordle",
     "name": "can-a-simple-algorithm-beat-ai-at-wordle",
     "cover": {
