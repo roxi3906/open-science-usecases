@@ -4,11 +4,12 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 from urllib.parse import urlsplit
 
-from manifest_diff import git, local_resources, manifests
+from manifest_diff import changed_entries, git, local_resources, manifests
 
 
 def declared_sha(resource):
@@ -28,7 +29,24 @@ def prepare(root, before, after):
             files.append({'path': resource['path'], 'key': key})
     if manifest_changed:
         files.append({'path': 'manifest.json', 'key': 'manifest.json'})
-    return {'before': before, 'after': after, 'files': files}
+    # Share the checker's manifest authority, then narrow to changed packages.
+    # Remote packages are intentionally included even though they are not uploaded.
+    previous_cases = {entry['name']: entry for entry in old}
+    packages = []
+    for entry in changed_entries(old, new):
+        prior = previous_cases.get(entry['name'], {}).get('case')
+        resource = entry['case']
+        if (prior is None or declared_sha(prior) != declared_sha(resource)
+                or any(prior.get(key) != resource.get(key)
+                       for key in ('path', 'file_name', 'release_url'))):
+            packages.append({'name': entry['name'], 'resource': resource})
+    return {'before': before, 'after': after, 'files': files, 'packages': packages}
+
+
+def extracted_prefix(name):
+    if not isinstance(name, str) or not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', name):
+        raise ValueError('Invalid case name for extracted prefix')
+    return name + '/extracted/'
 
 
 class S3:
@@ -42,12 +60,31 @@ class S3:
         subprocess.run(['aws', 's3', 'cp', str(path), self.target + '/' + key,
                         '--only-show-errors'], check=True)
 
+    def clear_extracted(self, name):
+        # Trailing slash prevents deleting similarly named sibling prefixes.
+        subprocess.run(['aws', 's3', 'rm', self.target + '/' + extracted_prefix(name),
+                        '--recursive', '--only-show-errors'], check=True)
+
 
 def apply(root, plan, s3):
     # No resource revalidation: the preceding check owns that contract. Git HEAD
     # and the plan bind all uploads to the fixed target checkout.
     if git(root, 'rev-parse', 'HEAD').strip() != plan['after']:
         raise ValueError('Checkout must match the prepared target commit')
+    packages = plan.get('packages', [])
+    if packages:
+        if plan.get('extraction_complete') is not True:
+            raise ValueError('All packages must be extracted before publication')
+        # Preflight all generated files before destructive S3 operations.
+        keys = {item['key'] for item in plan['files']}
+        for package in packages:
+            if extracted_prefix(package['name']) + 'session.json' not in keys:
+                raise ValueError('Extracted session is missing from the upload plan')
+        for item in plan['files']:
+            if not (root / item['path']).is_file():
+                raise ValueError('Planned upload file is missing: ' + item['path'])
+        for package in packages:
+            s3.clear_extracted(package['name'])
     for item in plan['files']:
         s3.upload(root / item['path'], item['key'])
     print('Uploaded {} local files.'.format(len(plan['files'])))

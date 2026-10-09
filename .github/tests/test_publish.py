@@ -69,6 +69,43 @@ class GitFixture(unittest.TestCase):
 
 
 class PublishTests(GitFixture):
+    def test_package_content_change_selects_extraction(self):
+        self.change('case')
+        self.assertEqual(self.plan().get('packages'),
+                         [{'name': 'a-case', 'resource': self.entry['case']}])
+
+    def test_package_source_and_destination_changes_select_extraction(self):
+        for field, value in [('release_url', 'https://example.com/new.science'),
+                             ('path', 'Other/A Case.science'), ('file_name', 'Other.science')]:
+            with self.subTest(field=field):
+                original = copy.deepcopy(self.entry['case'])
+                self.entry['case'][field] = value
+                self.write_manifest(); self.commit()
+                self.assertEqual(len(self.plan().get('packages', [])), 1)
+                self.entry['case'] = original
+        self.entry['name'] = 'renamed'; self.write_manifest(); self.commit()
+        self.assertEqual(self.plan().get('packages'),
+                         [{'name': 'renamed', 'resource': self.entry['case']}])
+
+    def test_new_remote_package_is_selected_even_without_local_upload(self):
+        self.entry['case']['release_url'] = 'https://example.com/a.science'
+        self.write_manifest(); self.commit()
+        self.assertEqual(self.plan(before=self.initial).get('packages'),
+                         [{'name': 'a-case', 'resource': self.entry['case']}])
+
+    def test_non_package_changes_do_not_select_extraction(self):
+        self.change('cover')
+        self.assertEqual(self.plan().get('packages'), [])
+        self.entry['title'] = 'Description only'; self.write_manifest(); self.commit()
+        self.assertEqual(self.plan().get('packages'), [])
+        self.entries = []; self.write_manifest(); self.commit()
+        self.assertEqual(self.plan().get('packages'), [])
+
+    def test_file_only_changes_do_not_select_extraction(self):
+        (self.root / self.entry['case']['path']).write_bytes(b'modified')
+        self.commit()
+        self.assertEqual(self.plan().get('packages'), [])
+
     def test_multiple_commits_and_same_size_changes(self):
         self.change('cover'); after = self.change('introduction', '3')
         self.assertEqual(self.keys(self.plan(after=after)),
