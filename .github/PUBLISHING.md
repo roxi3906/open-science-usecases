@@ -2,51 +2,54 @@
 
 The `Check and publish cases` workflow owns one native concurrency queue for main. The lock covers admission, structure and declaration checks, planning, uploading, and finalization. Pull requests run checks and the test suite without publishing or changing publication state. Main batches omit the test suite, which is verified on the PR.
 
-## State and first setup
+## Publication history and migration
 
-The GitHub branch `check-publish-state` contains only `state.json`. It is created by the first explicitly initialized manual run, not by normal pushes. State commits use a fast-forward reference update so concurrent or stale writers cannot overwrite another owner.
+GitHub Actions attempt-one history is the publication record. No state file, state branch, deployment record or artifact is created or updated. An existing `check-publish-state` branch is ignored and left untouched.
 
-The state stores a confirmed successful commit, the failure latch, the current batch and its provisional completion, a conservative run-history audit boundary, and the last confirmed manual recovery coverage. The coverage marker acknowledges covered manual failures even when an older uncovered waiter keeps the audit boundary open. The active batch's run ID and endpoints identify exactly what was checked. A success candidate becomes effective **only when attempt 1 of the entire workflow has GitHub's final `completed/success` conclusion**. The next queue admission confirms that conclusion and materializes the new baseline. A finalizer cannot claim that its own workflow has already finished: this distinction prevents cancellation after its last step from being counted as success.
+Admission reads repository-wide run history, selecting only this repository's main push/manual `check-structure.yml` runs and the former `publish.yml` workflow's main `workflow_run` runs. Unfiltered pagination avoids GitHub's 1,000-result filtered-query cap. PRs and other workflows do not affect publication. Job evidence is fetched only for successful candidates that can extend the verified baseline or recovery coverage; covered older successes do not each consume another jobs request. Native reruns never replace attempt one's result.
 
-Required permissions:
+A baseline requires the **entire attempt** to have a final `completed/success` result. For the combined workflow, the admission and upload-planning steps must have succeeded, and finalization must have verified a successful upload or an explicitly empty plan. A green check-only run, covered push with skipped planning, or skipped legacy upload is not a publication. Baseline selection follows commit ancestry rather than workflow creation order; divergent successful targets fail closed.
 
-- The workflow token needs `contents: write` to create/update this state branch and `actions: write` to cancel waiting runs. Repository/organization policy and branch rules must permit those writes. The workflow never writes the main branch.
+The former full-sync publisher is recognized automatically when its upload step succeeded. Its actual checked-out SHA is read from the retained checkout log: a `workflow_run` run's own `head_sha` can refer to a different default-branch commit. This allows migration from a verified old publication without entering `initial_baseline`. Once a combined-workflow manual recovery succeeds, future admission no longer needs the legacy logs.
+
+Required permissions and evidence:
+
+- The workflow token needs `contents: read` and `actions: write`. Actions write permission is used only to cancel waiting pushes; the workflow never writes Git refs or files.
 - S3 credentials need the existing upload permissions plus `s3:ListBucket` and `s3:DeleteObject` for replacing `<case.name>/extracted/`. Restrict list/delete permissions to those prefixes under `AWS_TARGET_FOLDER`. Planning still needs no S3 access; no object GET, tagging or checksum queries are used. AWS CLI may perform its normal multipart upload operations. If bucket versioning is enabled, deletion hides current objects with delete markers; it does not purge historical versions.
-- Preserve the state branch and the referenced attempt-1 run records. Missing/corrupt state, unavailable run evidence, or unavailable commits fail closed.
-
-After you have **manually completed the initial full sync at a known main commit O**, initialize once:
-
-```sh
-repo=OWNER/REPO
-baseline=FULL_40_CHARACTER_SHA_ALREADY_SYNCED
-
-gh workflow run check-structure.yml --repo "$repo" --ref main \
-  -f initial_baseline="$baseline"
-```
-
-Replace both placeholders. The dispatched main SHA is fixed as C; initialization runs the normal checked net difference O→C, which may be empty. An existing state branch makes `initial_baseline` an error; it cannot reset a previous deployment or silently bypass a failure. This command must be run after the workflow is available on main. Do not create a baseline from an assumed S3 state.
+- Preserve relevant run records, attempt-one job/step results, and legacy logs until migration completes. An API error, missing required job/log evidence, missing commit, stalled pagination or unknown ancestry stops publication. A deleted run that no longer appears in history cannot be detected as a missing failure; do not delete publication history while relying on this protocol. Actions history also cannot detect out-of-band changes to S3.
 
 ## Normal pushes and failures
 
-Every main push retains its original `before→after` endpoints. Both check and upload checkout the fixed `after`. Admission requires the predecessor to equal the effective successful baseline; already-covered old pushes are skipped. The success baseline is never substituted for a normal push's `before`.
+Every main push retains its original `before→after` endpoints. Both check and upload checkout the fixed `after`. The push's `before` must equal the successful baseline; admission never silently changes it to another commit. Covered old pushes skip resource checks and uploads.
 
-GitHub's `queue: max` admits up to 100 waiting runs and orders them by arrival at the concurrency queue, not commit time or workflow run number. A missing, reordered, canceled, timed-out or interrupted dependency causes a failure latch rather than waiting for another task that needs the same lock. A history audit also detects cancellation before admission could persist an active marker. Older unresolved runs remain visible across newer-numbered successes until their targets are covered. History is paginated through the workflow's unfiltered runs and restricted to main push/manual events locally, avoiding GitHub's filtered-query 1,000-result cap. It stops at the audit boundary or the end of the listing, so a long backlog can still be acknowledged after manual recovery. Commit coverage uses local Git objects when available, with cached comparisons and an API fallback only for commits missing from the checkout (such as later queued pushes). This avoids one remote comparison per historical run. Duplicate rows across pages are ignored; a stalled listing, API failure or unknown relationship produces an explicit error rather than returning partial evidence or assuming success.
+The shared native concurrency lock covers admission, checking, planning, upload and finalization. Queue arrival order is not necessarily commit order. A missing predecessor or nonterminal active publisher blocks rather than waiting while holding the lock.
 
-On a check/upload failure, the latch is written before cancellation calls. Waiting pushes are canceled; manual runs are never canceled by this code. Pushes targeting commits after a queued manual recovery are preserved, then still must satisfy exact predecessor admission. If a run is terminated before its finalizer executes, the unfinished active marker/history audit blocks the next admission. If cancellation APIs fail, the latch remains set and remaining runs reject resource checking/publication at admission. Concurrent arrivals missed by a cancellation snapshot are rejected by the same latch.
+Failed, canceled, timed-out and interrupted attempts are the failure record, including runs canceled before admission or after their finalizer. Subsequent automatic runs stop before checking resources or uploading until a successful manual recovery covers the failed target. Recovery coverage follows commit ancestry: covered push targets remain obsolete even if their runs are canceled later, while failed manual requests must also predate the successful recovery. A failed request for a later or unrelated target remains blocking even when its run number is smaller. Another ordinary successful run cannot silently clear an uncovered failure.
 
-Native reruns (`run_attempt > 1`), including failed-jobs-only reruns, are refused independently in check, publish, and finalization. They cannot write state, change the baseline, cancel batches, or upload resources.
+On failure, finalization cancels waiting pushes where possible; manual runs are never canceled by this code. Pushes beyond a queued manual recovery's target are preserved. If finalization is interrupted or cancellation fails, later admission still sees the failed attempt and refuses publication. A late finalizer whose attempt has already ended does not cancel waiters.
+
+Native reruns (`run_attempt > 1`), including failed-jobs-only reruns, remain disabled independently in checking, uploading and finalization. Use a new main manual dispatch for recovery.
 
 ## Manual recovery
 
 After fixing the issue and pushing the intended final state to main:
 
 ```sh
-gh workflow run check-structure.yml --repo "$repo" --ref main
+gh workflow run check-structure.yml --repo OWNER/REPO --ref main
 ```
 
-Leave `initial_baseline` empty. No `before` or moving-main lookup is used. After acquiring the same lock, the workflow resolves the last overall success O and checks/publishes the final net manifest difference to its fixed dispatch SHA C. It does not replay failed batches. A check success alone cannot advance O. Resource failure prevents manifest upload and keeps the latch; an explicitly empty plan skips the publish job and counts as successful completion. Following admission confirms the terminal success and clears the latch. Older covered batches do not publish again; targets behind a confirmed baseline cannot roll it back.
+Leave `initial_baseline` empty. Admission discovers the last successful publication O and checks/publishes the final net manifest difference to the fixed dispatch SHA C. It does not replay failed intermediate batches, and a stale manual target cannot roll back a newer published baseline. Only the entire manual attempt's final success establishes recovery coverage. Resource failure prevents manifest upload and leaves later pushes blocked. An explicitly empty plan skips upload and still permits successful recovery.
 
-A dispatch made while a newer main push is already queued may reach the lock in an unexpected order. Admission and ancestry checks remain authoritative. If an uncovered predecessor cannot be established, the run blocks with an error and requires another main dispatch; it never guesses or publishes an overlapping range.
+For the migration that first introduces this history-based workflow, previously failed main runs remain failures. Merge the workflow and manually dispatch it once to cover them; finding a legacy baseline alone does not bypass the failure gate.
+
+If **no successful publication evidence exists at all**, manually complete a full sync at a known main commit O, then dispatch once with its full SHA:
+
+```sh
+gh workflow run check-structure.yml --repo OWNER/REPO --ref main \
+  -f initial_baseline=FULL_40_CHARACTER_SHA_ALREADY_SYNCED
+```
+
+This emergency first-sync input cannot override existing successful history or an API/evidence error. The resulting successful manual run becomes the future history anchor. Do not guess a baseline from assumed S3 contents.
 
 ## Manifest contract and uploads
 
@@ -72,10 +75,10 @@ Recovery deliberately accepts partial writes left by a failure. Only O→C's net
 
 ## Verification scope
 
-The Python tests use temporary Git repositories, local HTTP GitHub API and package-download fixtures, and a filesystem S3 fixture supporting uploads and extracted-prefix deletion. These verify state transitions, archive parsing, download integrity, prefix replacement, and upload/delete failures without writing to GitHub state or real S3. Run them with:
+The Python tests use temporary Git repositories, local HTTP GitHub API and package-download fixtures, and a filesystem S3 fixture supporting uploads and extracted-prefix deletion. These verify history-based admission, recovery coverage, archive parsing, download integrity, prefix replacement, and upload/delete failures without writing to GitHub or real S3. Run them with:
 
 ```sh
 python3 -B -m unittest discover -s .github/tests -v
 ```
 
-A passing PR check does not exercise main's hosted concurrency scheduler, state-branch permissions, cancellation permissions or real S3 credentials. Those require an explicitly initialized main deployment after merge and manual initial synchronization.
+A passing PR check does not exercise main's hosted concurrency scheduler, cancellation permissions or real S3 credentials. Those require an actual main deployment after merge; local fixtures and read-only history checks do not prove hosted publication success.

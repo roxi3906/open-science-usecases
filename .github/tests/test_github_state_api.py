@@ -1,6 +1,4 @@
-"""Exercise the HTTP boundary and CAS payloads without accessing GitHub."""
-import base64
-import copy
+"""Exercise run-history HTTP pagination and attempt-one evidence without GitHub."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -42,45 +40,27 @@ class APITests(unittest.TestCase):
         self.addCleanup(self.http.shutdown)
         env = patch.dict(os.environ, {'GITHUB_API_URL': f'http://127.0.0.1:{self.http.server_port}', 'GH_TOKEN': 'test-token'})
         env.start(); self.addCleanup(env.stop)
-        self.api = GitHub('owner/repo', 'check-structure.yml')
+        self.api = GitHub('owner/repo')
 
-    def test_state_read_and_fast_forward_write_compare_and_swap(self):
-        state = {'baseline': 'a' * 40}
-        def reply(method, path, body):
-            suffix = path.removeprefix('/repos/owner/repo/')
-            if suffix == 'git/ref/heads/check-publish-state':
-                return 200, {'object': {'sha': 'old-state'}}
-            if suffix == 'contents/state.json?ref=old-state':
-                return 200, {'encoding': 'base64', 'content': base64.b64encode(json.dumps(state).encode()).decode()}
-            if suffix == 'git/trees':
-                return 201, {'sha': 'tree'}
-            if suffix == 'git/commits':
-                return 201, {'sha': 'new-state'}
-            if suffix == 'git/refs/heads/check-publish-state':
-                return 200, {'object': {'sha': 'new-state'}}
-            return 404, {}
-        self.http.reply = reply
-        loaded, revision = self.api.read()
-        self.assertEqual((loaded, revision), (state, 'old-state'))
-        self.assertEqual(self.api.write(state, revision), 'new-state')
-        commit = next(body for method, path, body in self.http.calls if path.endswith('/git/commits'))
-        self.assertEqual(commit['parents'], ['old-state'])
-        self.assertEqual(self.http.calls[-1][2], {'sha': 'new-state', 'force': False})
-        # A conflicting ref update fails; it never retries with force=true.
-        self.http.reply = lambda method, path, body: (422, {}) if method == 'PATCH' else reply(method, path, body)
-        with self.assertRaisesRegex(ValueError, 'HTTP 422'):
-            self.api.write(state, revision)
-        self.assertEqual(self.http.calls[-1][2]['force'], False)
-
-    def test_missing_state_only_404_is_absence(self):
+    def test_missing_history_is_an_error_not_an_empty_baseline(self):
         self.http.reply = lambda *_: (404, {})
-        self.assertEqual(self.api.read(), (None, None))
+        with self.assertRaisesRegex(ValueError, '404'):
+            self.api.history()
         self.http.reply = lambda *_: (403, {})
         with self.assertRaisesRegex(ValueError, '403'):
-            self.api.read()
+            self.api.history()
+
+    def test_jobs_use_attempt_one_and_follow_all_pages(self):
+        rows = [{'id': n, 'name': str(n)} for n in range(101)]
+        def reply(method, path, body):
+            self.assertIn('/attempts/1/jobs?', path)
+            page = int(parse_qs(urlsplit(path).query)['page'][0])
+            return 200, {'jobs': rows[(page - 1) * 100:page * 100]}
+        self.http.reply = reply
+        self.assertEqual([job['id'] for job in self.api.jobs(42)], list(range(101)))
 
     def test_attempt_one_is_used_and_history_paginates_pending_and_cancelled(self):
-        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main', 'event': 'push', 'status': 'pending'}
+        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main', 'path': '.github/workflows/check-structure.yml', 'event': 'push', 'status': 'pending'}
                 for n in range(200, 100, -1)]
         rows[0]['run_attempt'] = 2
         def reply(method, path, body):
@@ -89,17 +69,17 @@ class APITests(unittest.TestCase):
             if path.endswith('&page=1'):
                 return 200, {'workflow_runs': rows}
             if path.endswith('&page=2'):
-                return 200, {'workflow_runs': [{'id': 100, 'run_number': 100, 'run_attempt': 1, 'head_branch': 'main', 'event': 'push'}]}
+                return 200, {'workflow_runs': [{'id': 100, 'run_number': 100, 'run_attempt': 1, 'head_branch': 'main', 'path': '.github/workflows/check-structure.yml', 'event': 'push'}]}
             return 404, {}
         self.http.reply = reply
-        runs = self.api.history(100)
-        self.assertEqual(len(runs), 100)
+        runs = self.api.history()
+        self.assertEqual(len(runs), 101)
         self.assertEqual(runs[0]['conclusion'], 'cancelled')
-        self.assertEqual(runs[-1]['id'], 101)
+        self.assertEqual(runs[-1]['id'], 100)
         self.assertTrue(any('page=2' in path for _, path, _ in self.http.calls))
 
     def test_history_beyond_1000_filters_branches_and_events_locally(self):
-        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main',
+        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main', 'path': '.github/workflows/check-structure.yml',
                  'event': 'push', 'status': 'completed', 'conclusion': 'cancelled'}
                 for n in range(1105, 0, -1)]
         rows[0]['head_branch'] = 'feature'
@@ -111,28 +91,33 @@ class APITests(unittest.TestCase):
             selected = rows[:1000] if 'branch' in query else rows
             return 200, {'workflow_runs': selected[(page - 1) * 100:page * 100]}
         self.http.reply = reply
-        runs = self.api.history(1)
-        self.assertEqual([run['id'] for run in runs], list(range(1103, 1, -1)))
+        runs = self.api.history()
+        self.assertEqual([run['id'] for run in runs], list(range(1103, 0, -1)))
         self.assertTrue(any(parse_qs(urlsplit(path).query)['page'] == ['12']
                             for _, path, _ in self.http.calls))
 
-    def test_history_stops_at_audit_boundary_without_scanning_older_pages(self):
-        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main', 'event': 'push'}
-                for n in range(1100, 1000, -1)]
+    def test_history_includes_legacy_publish_but_ignores_unrelated_workflows(self):
+        rows = [
+            {'id': 1, 'run_attempt': 1, 'head_branch': 'main', 'event': 'workflow_run',
+             'path': '.github/workflows/publish.yml'},
+            {'id': 2, 'run_attempt': 1, 'head_branch': 'main', 'event': 'push',
+             'path': '.github/workflows/unrelated.yml'},
+            {'id': 3, 'run_attempt': 1, 'head_branch': 'main', 'event': 'pull_request',
+             'path': '.github/workflows/check-structure.yml'},
+        ]
         self.http.reply = lambda *_: (200, {'workflow_runs': rows})
-        runs = self.api.history(1098)
-        self.assertEqual([run['id'] for run in runs], [1100, 1099])
-        self.assertEqual(len(self.http.calls), 1)
+        self.assertEqual([run['id'] for run in self.api.history()], [1])
+        self.assertIn('/actions/runs?', self.http.calls[0][1])
 
     def test_history_repeated_page_is_an_explicit_error(self):
-        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main', 'event': 'push'}
+        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main', 'path': '.github/workflows/check-structure.yml', 'event': 'push'}
                 for n in range(1100, 1000, -1)]
         self.http.reply = lambda *_: (200, {'workflow_runs': rows})
         with self.assertRaisesRegex(ValueError, 'did not advance'):
-            self.api.history(1)
+            self.api.history()
 
     def test_history_deduplicates_overlapping_pages_when_new_runs_arrive(self):
-        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main', 'event': 'push'}
+        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main', 'path': '.github/workflows/check-structure.yml', 'event': 'push'}
                 for n in range(200, 0, -1)]
         def reply(method, path, body):
             page = int(parse_qs(urlsplit(path).query)['page'][0])
@@ -140,15 +125,15 @@ class APITests(unittest.TestCase):
             offset = 0 if page == 1 else (page - 1) * 100 - 1
             return 200, {'workflow_runs': rows[offset:offset + 100]}
         self.http.reply = reply
-        self.assertEqual([run['id'] for run in self.api.history(1)], list(range(200, 1, -1)))
+        self.assertEqual([run['id'] for run in self.api.history()], list(range(200, 0, -1)))
 
     def test_history_second_page_failure_does_not_return_partial_results(self):
-        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main', 'event': 'push'}
+        rows = [{'id': n, 'run_number': n, 'run_attempt': 1, 'head_branch': 'main', 'path': '.github/workflows/check-structure.yml', 'event': 'push'}
                 for n in range(200, 100, -1)]
         self.http.reply = lambda method, path, body: ((200, {'workflow_runs': rows})
                                                      if path.endswith('&page=1') else (503, {}))
         with self.assertRaisesRegex(ValueError, 'HTTP 503'):
-            self.api.history(1)
+            self.api.history()
 
     def test_queued_target_ancestry_uses_github_metadata_not_stale_local_fetch(self):
         self.http.reply = lambda *_: (200, {'status': 'ahead'})
