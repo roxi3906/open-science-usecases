@@ -69,6 +69,29 @@
     }
   },
   {
+    "title": "Can One Extra Token Make AI Cost 5× as Much",
+    "name": "can-one-extra-token-make-ai-cost-5-as-much",
+    "cover": {
+      "file_name": "Can One Extra Token Make AI Cost 5× as Much.png",
+      "bytes": 2753386,
+      "sha256": "25eae5c1f669870373896bb203e442be150edd3ee33ec4088be518c87492d5ae",
+      "path": "Can One Extra Token Make AI Cost 5× as Much/Can One Extra Token Make AI Cost 5× as Much.png"
+    },
+    "case": {
+      "file_name": "Can One Extra Token Make AI Cost 5× as Much.science",
+      "bytes": 1392897,
+      "sha256": "da8cae64d0fb1c7cc3563e47af1031021ae2cca61b672a3d4bcdf7674fd52b20",
+      "path": "Can One Extra Token Make AI Cost 5× as Much/Can One Extra Token Make AI Cost 5× as Much.science",
+      "release_url": ""
+    },
+    "introduction": {
+      "file_name": "Can One Extra Token Make AI Cost 5× as Much.md",
+      "bytes": 2387,
+      "sha256": "ed267620a0e15c694e34da0af1febc5be5f21c3c5f984d37bfad24a1fe034c55",
+      "path": "Can One Extra Token Make AI Cost 5× as Much/Can One Extra Token Make AI Cost 5× as Much.md"
+    }
+  },
+  {
     "title": "First Flight vs. Evening Flight - Which Is More Reliable",
     "name": "first-flight-vs-evening-flight-which-is-more-reliable",
     "cover": {
