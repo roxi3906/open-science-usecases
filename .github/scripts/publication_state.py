@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Derive publication admission and failure blocking from GitHub Actions history."""
 import argparse
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -30,6 +31,24 @@ def workflow(run):
 def order(run):
     # Run numbers belong to individual workflows; compare creation across both pipelines.
     return run['created_at'], run['id']
+
+
+def passed(job, step):
+    return (job.get('status') == 'completed' and job.get('conclusion') == 'success' and
+            any(item['name'] == step and item['conclusion'] == 'success'
+                for item in job.get('steps', [])))
+
+
+def job_time(job, field):
+    # GitHub's job timestamps, unlike run creation/update times, bound actual execution.
+    value = job.get(field)
+    try:
+        result = datetime.fromisoformat(value.replace('Z', '+00:00')) if isinstance(value, str) else None
+        if result is None or result.utcoffset() is None:
+            raise ValueError('missing timezone-aware timestamp')
+    except ValueError as error:
+        raise ValueError('Missing or invalid legacy publication timing evidence: ' + field) from error
+    return result
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -142,17 +161,18 @@ class Controller:
                 self.run['event'] not in ('push', 'workflow_dispatch')):
             raise ValueError('Publication admission is restricted to main push/workflow_dispatch')
 
-    def publication(self, run):
-        if run['status'] != 'completed' or run['conclusion'] != 'success':
-            return None
+    def publication_jobs(self, run):
         records = self.api.jobs(run['id'])
         jobs = {job['name']: job for job in records}
         if not jobs or len(jobs) != len(records):
             raise ValueError('Missing or ambiguous publication job evidence')
-        def passed(job, step):
-            return (job.get('status') == 'completed' and job.get('conclusion') == 'success' and
-                    any(item['name'] == step and item['conclusion'] == 'success'
-                        for item in job.get('steps', [])))
+        return jobs
+
+    def publication(self, run, jobs=None):
+        if run['status'] != 'completed' or run['conclusion'] != 'success':
+            return None
+        if jobs is None:
+            jobs = self.publication_jobs(run)
         publish = jobs.get('publish', {})
         if workflow(run) == LEGACY:
             if not passed(publish, 'Publish local resources to S3'):
@@ -187,6 +207,34 @@ class Controller:
         # The finalizer verifies that a skipped publish was an explicitly empty plan.
         return run
 
+    def legacy_publications(self, runs):
+        candidates, verified = [], []
+        for run in runs:
+            if (workflow(run) != LEGACY or run['status'] != 'completed' or
+                    run['conclusion'] != 'success'):
+                continue
+            jobs = self.publication_jobs(run)
+            publish = jobs.get('publish', {})
+            if not passed(publish, 'Publish local resources to S3'):
+                continue
+            if not passed(publish, 'Check out the validated commit'):
+                raise ValueError('Cannot verify legacy publication checkout')
+            started, completed = job_time(publish, 'started_at'), job_time(publish, 'completed_at')
+            if completed < started:
+                raise ValueError('Invalid legacy publication timing evidence: completion before start')
+            candidates.append((completed, started, run, jobs))
+        for completed, started, run, jobs in sorted(candidates, key=lambda item: item[0], reverse=True):
+            # A verified full sync supersedes earlier writes only when they ended before
+            # it began and their default-branch snapshot is within its actual checkout.
+            # Overlapping/tied jobs and unknown or uncovered commits still need logs.
+            if any(completed < later_start and self.is_ancestor(run['head_sha'], later['head_sha'])
+                   for later, later_start in verified):
+                continue
+            publication = self.publication(run, jobs)
+            publication['publication_started_at'] = started
+            verified.append((publication, started))
+        return [run for run, _ in verified]
+
     def successful_publications(self, runs):
         current, recoveries, latest = [], [], None
         # Query job evidence only when it can extend a verified baseline or recovery.
@@ -209,8 +257,7 @@ class Controller:
         # Once a modern recovery succeeds, old publisher logs are no longer needed.
         if recoveries:
             return current
-        legacy = [self.publication(run) for run in runs if workflow(run) == LEGACY]
-        return current + [run for run in legacy if run is not None]
+        return current + self.legacy_publications(runs)
 
     def baseline(self, successes):
         latest = None
@@ -234,10 +281,26 @@ class Controller:
                 continue
             # Covered pushes are obsolete even when canceled after recovery. Manual
             # failures must also predate recovery; a new failed recovery stays blocking.
-            if any((run['event'] == 'push' or order(run) < order(recovery)) and
+            if any(not (workflow(run) == LEGACY and workflow(recovery) == LEGACY) and
+                   (run['event'] == 'push' or order(run) < order(recovery)) and
                    self.is_ancestor(run['head_sha'], recovery['head_sha'])
                    for recovery in recoveries):
                 continue
+            # Legacy runs can start out of creation order. A later full sync also
+            # repairs failed writes, but only after every failed-run job has ended.
+            legacy_recoveries = [recovery for recovery in recoveries
+                                 if workflow(run) == LEGACY and workflow(recovery) == LEGACY and
+                                 self.is_ancestor(run['head_sha'], recovery['head_sha'])]
+            if legacy_recoveries:
+                try:
+                    jobs = self.publication_jobs(run).values()
+                    if any(job.get('status') != 'completed' for job in jobs):
+                        raise ValueError('Missing terminal legacy failure job evidence')
+                    completed = max(job_time(job, 'completed_at') for job in jobs)
+                except ValueError as error:
+                    raise ValueError(str(error) + '. ' + RECOVER) from error
+                if any(completed < recovery['publication_started_at'] for recovery in legacy_recoveries):
+                    continue
             raise ValueError(f"Batch {run['id']} failed/cancelled without a covering recovery. " + RECOVER)
 
     def cancel_waiting(self):

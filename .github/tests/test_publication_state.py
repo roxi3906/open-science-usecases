@@ -60,7 +60,7 @@ class HistoryTests(GitFixture):
 
     def job(self, number, name, steps, conclusion='success'):
         return {'id': number, 'name': name, 'status': 'completed', 'conclusion': conclusion,
-                'completed_at': timestamp(number),
+                'started_at': timestamp(number - 0.5), 'completed_at': timestamp(number),
                 'steps': [{'name': name, 'conclusion': result} for name, result in steps.items()]}
 
     def record(self, number, sha, event='push', status='in_progress', conclusion=None):
@@ -112,6 +112,113 @@ class HistoryTests(GitFixture):
                 self.api.logs[1] = log
                 with self.assertRaisesRegex(ValueError, 'checkout'):
                     self.admit(2, None, self.b, 'workflow_dispatch')
+
+    def legacy_sync(self, number, sha, start, end):
+        run = self.record(number, sha, 'workflow_run', 'completed', 'success')
+        job = self.job(number, 'publish', {
+            'Check out the validated commit': 'success',
+            'Publish local resources to S3': 'success',
+        })
+        job.update(started_at=timestamp(start), completed_at=timestamp(end))
+        self.api.jobs_by_run[number] = [job]
+        self.api.logs[number] = ('2026-01-01T00:00:00Z [command]/usr/bin/git log -1 --format=%H\n'
+                                 '2026-01-01T00:00:01Z ' + sha + '\n')
+        return run
+
+    def missing_log(self, job_id):
+        original = self.api.job_log
+        def read(number):
+            if number == job_id:
+                raise ValueError('HTTP 404: required legacy log unavailable')
+            return original(number)
+        self.api.job_log = read
+
+    def test_latest_full_sync_covers_missing_older_log(self):
+        self.legacy_sync(2, self.b, 3, 4)
+        self.missing_log(1)
+        result = self.admit(5, None, self.c, 'workflow_dispatch')
+        self.assertEqual((result['before'], result['after']), (self.b, self.c))
+
+    def test_legacy_coverage_uses_completion_not_creation_or_listing_order(self):
+        # The older-created run waits longer and performs the last complete sync.
+        self.legacy_sync(1, self.b, 5, 6)
+        self.legacy_sync(2, self.a, 3, 4)
+        self.missing_log(2)
+        self.api.runs = dict(reversed(list(self.api.runs.items())))
+        self.assertEqual(self.admit(7, None, self.c, 'workflow_dispatch')['before'], self.b)
+
+    def test_later_finishing_sync_with_missing_log_is_still_required(self):
+        self.legacy_sync(1, self.base, 5, 6)
+        self.legacy_sync(2, self.b, 3, 4)
+        self.missing_log(1)
+        with self.assertRaisesRegex(ValueError, 'required legacy log'):
+            self.admit(7, None, self.c, 'workflow_dispatch')
+
+    def test_older_log_outside_verified_commit_coverage_is_still_required(self):
+        self.legacy_sync(1, self.c, 1, 2)
+        self.legacy_sync(2, self.b, 3, 4)
+        self.missing_log(1)
+        with self.assertRaisesRegex(ValueError, 'required legacy log'):
+            self.admit(5, None, self.c, 'workflow_dispatch')
+
+    def test_legacy_coverage_uses_verified_checkout_not_newer_workflow_head(self):
+        self.legacy_sync(1, self.b, 1, 2)
+        newest = self.legacy_sync(2, self.a, 3, 4)
+        newest['head_sha'] = self.c  # The run metadata must not widen actual sync coverage.
+        self.missing_log(1)
+        with self.assertRaisesRegex(ValueError, 'required legacy log'):
+            self.admit(5, None, self.c, 'workflow_dispatch')
+
+    def test_overlapping_or_tied_syncs_cannot_hide_a_missing_log(self):
+        for start, end in ((3, 6), (1, 5), (1, 3)):
+            with self.subTest(start=start, end=end):
+                self.legacy_sync(1, self.base, start, end)
+                self.legacy_sync(2, self.b, 3, 5)
+                self.missing_log(1)
+                with self.assertRaisesRegex(ValueError, 'required legacy log'):
+                    self.admit(7, None, self.c, 'workflow_dispatch')
+
+    def test_missing_legacy_completion_evidence_blocks(self):
+        self.legacy_sync(2, self.b, 3, 4)
+        del self.api.jobs_by_run[1][0]['completed_at']
+        with self.assertRaisesRegex(ValueError, 'timing evidence'):
+            self.admit(5, None, self.c, 'workflow_dispatch')
+
+    def test_skipped_older_log_does_not_resurrect_a_covered_failure(self):
+        self.legacy_sync(1, self.b, 5, 6)
+        self.record(2, self.b, 'workflow_run', 'completed', 'failure')
+        self.api.jobs_by_run[2] = [self.job(2, 'publish', {}, 'failure')]
+        self.legacy_sync(3, self.b, 3, 4)
+        self.missing_log(3)
+        self.assertTrue(self.admit(7, self.b, self.c)['proceed'])
+
+    def test_late_failure_is_not_cleared_by_an_earlier_full_sync(self):
+        for sync_id in (1, 3):
+            with self.subTest(sync_id=sync_id):
+                self.legacy_sync(sync_id, self.b, 5, 6)
+                self.record(2, self.b, 'workflow_run', 'completed', 'failure')
+                job = self.job(2, 'publish', {}, 'failure')
+                job.update(started_at=timestamp(6), completed_at=timestamp(7))
+                self.api.jobs_by_run[2] = [job]
+                with self.assertRaisesRegex(ValueError, 'workflow_dispatch'):
+                    self.admit(8, self.b, self.c)
+
+    def test_all_failed_run_jobs_must_finish_before_the_covering_sync(self):
+        self.legacy_sync(1, self.b, 5, 6)
+        self.record(2, self.b, 'workflow_run', 'completed', 'failure')
+        self.api.jobs_by_run[2] = [self.job(2, 'publish', {}, 'failure'),
+                                   self.job(7, 'cleanup', {}, 'failure')]
+        with self.assertRaisesRegex(ValueError, 'workflow_dispatch'):
+            self.admit(8, self.b, self.c)
+
+    def test_covered_failure_still_requires_its_completion_evidence(self):
+        self.legacy_sync(1, self.b, 5, 6)
+        self.record(2, self.b, 'workflow_run', 'completed', 'failure')
+        job = self.job(2, 'publish', {}, 'failure')
+        job['completed_at'] = None
+        self.api.jobs_by_run[2] = [job]
+        with self.assertRaisesRegex(ValueError, 'timing evidence'):
+            self.admit(7, self.b, self.c)
 
     def test_check_only_success_does_not_advance_baseline(self):
         self.record(2, self.a, status='completed', conclusion='success')
