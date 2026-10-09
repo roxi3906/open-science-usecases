@@ -2,6 +2,7 @@
 import copy
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 from test_publish import GitFixture
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 try:
@@ -295,3 +296,65 @@ class StateTests(GitFixture):
         self.assertTrue(result['proceed'])
         self.assertEqual(self.api.state['baseline'], self.b)
         self.assertFalse(self.api.state['blocked'])
+
+
+    def test_manual_recovery_after_1000_runs_allows_next_push_and_dispatch(self):
+        self.api.state['blocked'] = 'previous publication failed'
+        for number in range(1, 1002):
+            self.run_record(number, self.a, status='completed', conclusion='cancelled')
+        requests = []
+        # Keep the actual paginator and state machine; replace only HTTP transport.
+        api = self.api
+        class RunPages(state_module.GitHub):
+            def request(inner, method, path, data=None, missing=False):
+                requests.append(path)
+                query = parse_qs(urlsplit(path).query)
+                rows = sorted(api.runs.values(), key=lambda run: run['run_number'], reverse=True)
+                if 'branch' in query:
+                    rows = rows[:1000]
+                page = int(query['page'][0])
+                return {'workflow_runs': rows[(page - 1) * 100:page * 100]}
+        self.api.history = RunPages('owner/repo', 'check-structure.yml').history
+        recovery, result = self.admit(1002, None, self.b, 'workflow_dispatch')
+        self.assertEqual((result['before'], result['after']), (self.base, self.b))
+        self.finish_success(recovery)
+        def no_remote_comparison(before, after):
+            raise AssertionError('Local commit coverage must not use one API request per history row')
+        self.api.ancestor = no_remote_comparison
+        following, result = self.admit(1003, self.b, self.c)
+        self.assertTrue(result['proceed'])
+        self.assertEqual(self.api.state['baseline'], self.b)
+        self.assertIsNone(self.api.state['blocked'])
+        self.finish_success(following)
+        _, result = self.admit(1004, None, self.c, 'workflow_dispatch')
+        self.assertEqual((result['before'], result['after']), (self.c, self.c))
+        self.assertEqual(self.api.state['baseline'], self.c)
+        self.assertIsNone(self.api.state['blocked'])
+        self.assertTrue(any(parse_qs(urlsplit(path).query)['page'] == ['11'] for path in requests))
+
+
+    def test_cancel_waiting_uses_api_only_for_commits_missing_from_checkout(self):
+        a, _ = self.admit(1, self.base, self.a)
+        # Clone before new commits arrive; the active runner cannot know their objects.
+        clone = self.root.parent / (self.root.name + '-stale-clone')
+        import shutil
+        import subprocess
+        self.addCleanup(shutil.rmtree, clone, True)
+        subprocess.run(['git', 'clone', '-q', '--no-local', str(self.root), str(clone)], check=True)
+        self.git('checkout', '--detach', self.c)
+        later = self.change('cover', '5')
+        latest = self.change('introduction', '6')
+        self.run_record(2, self.b, status='pending')
+        self.run_record(3, later, 'workflow_dispatch', 'pending')
+        self.run_record(4, latest, status='pending')
+        calls = []
+        remote = self.api.ancestor
+        def remote_ancestor(before, after):
+            calls.append((before, after))
+            return remote(before, after)
+        self.api.ancestor = remote_ancestor
+        a.root = clone
+        with self.assertRaises(ValueError):
+            a.finish('failure', 'skipped', '')
+        self.assertEqual(self.api.cancelled, [2])
+        self.assertIn((later, latest), calls)

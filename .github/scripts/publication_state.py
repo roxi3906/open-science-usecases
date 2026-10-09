@@ -70,18 +70,25 @@ class GitHub:
         return self.request('GET', f'actions/runs/{run_id}/attempts/1')
 
     def history(self, since):
-        found = []
-        # GitHub limits filtered workflow listings to 1,000 results. Refuse to
-        # infer a clean history if the audit horizon cannot be reached.
-        for page in range(1, 11):
-            response = self.request('GET', f'actions/workflows/{self.workflow_id}/runs?branch=main&per_page=100&page={page}')
+        found, seen = [], set()
+        page = 1
+        # The 1,000-result cap applies to filtered queries (including branch).
+        # Read this workflow's unfiltered pages, then select main runs locally.
+        # Never discard older evidence just to confirm a manual recovery.
+        while True:
+            response = self.request('GET', f'actions/workflows/{self.workflow_id}/runs?per_page=100&page={page}')
             runs = response['workflow_runs']
-            for run in runs:
-                if run['run_number'] > since and run['event'] in ('push', 'workflow_dispatch'):
+            fresh = [run for run in runs if run['id'] not in seen]
+            if runs and not fresh:
+                raise ValueError('Publication history pagination did not advance; cannot establish queue order. ' + RECOVER)
+            for run in fresh:
+                seen.add(run['id'])
+                if (run['run_number'] > since and run['head_branch'] == 'main' and
+                        run['event'] in ('push', 'workflow_dispatch')):
                     found.append(self.run(run['id']) if run['run_attempt'] != 1 else run)
             if len(runs) < 100 or any(run['run_number'] <= since for run in runs):
                 return found
-        raise ValueError('Publication history audit exceeds 1,000 runs; cannot establish queue order. ' + RECOVER)
+            page += 1
 
     def ancestor(self, before, after):
         # Waiters may target commits pushed after this runner fetched its tree.
@@ -99,6 +106,25 @@ class Controller:
     def __init__(self, root, api, run):
         self.root, self.api, self.run = root, api, run
         self.state = self.revision = None
+        self.relationships = {}
+
+    def is_ancestor(self, before, after):
+        pair = (before, after)
+        if pair not in self.relationships:
+            # Recovery history is already in the full checkout. Avoid spending
+            # one API request per old run; only later arrivals need remote data.
+            objects = subprocess.run(
+                ['git', 'cat-file', '--batch-check=%(objecttype)'], cwd=self.root,
+                input=f'{before}^{{commit}}\n{after}^{{commit}}\n',
+                capture_output=True, text=True, check=True).stdout.splitlines()
+            if any(line == sha + '^{commit} missing' for sha, line in zip(pair, objects)):
+                result = self.api.ancestor(before, after)
+            elif objects == ['commit', 'commit']:
+                result = ancestor(self.root, before, after)
+            else:
+                raise ValueError('Cannot determine commit object availability')
+            self.relationships[pair] = result
+        return self.relationships[pair]
 
     def guard(self):
         if self.run['run_attempt'] != 1:
@@ -119,7 +145,7 @@ class Controller:
             # A queued manual recovery is a barrier. Preserve later targets; the
             # admission gate still requires an exact before==baseline boundary.
             if any(recovery['head_sha'] != run['head_sha'] and
-                   self.api.ancestor(recovery['head_sha'], run['head_sha']) for recovery in recoveries):
+                   self.is_ancestor(recovery['head_sha'], run['head_sha']) for recovery in recoveries):
                 continue
             fresh = self.api.run(run['id'])
             if fresh['status'] in WAITING and fresh['event'] == 'push':
@@ -148,7 +174,7 @@ class Controller:
                 # creation order. Retain any older, still-uncovered waiter/failure.
                 uncovered = [item['run_number'] - 1 for item in self.api.history(self.state['audit_after'])
                              if item['run_number'] < active['number'] and
-                             not self.api.ancestor(item['head_sha'], active['after'])]
+                             not self.is_ancestor(item['head_sha'], active['after'])]
                 self.state['audit_after'] = min([active['number'], *uncovered])
                 self.state['recovery'] = {'after': active['after'], 'number': active['number']}
             elif self.run['event'] != 'workflow_dispatch':
@@ -174,7 +200,7 @@ class Controller:
             recovery = self.state.get('recovery')
             if (run['event'] == 'workflow_dispatch' and recovery and
                     run['run_number'] < recovery['number'] and
-                    self.api.ancestor(run['head_sha'], recovery['after'])):
+                    self.is_ancestor(run['head_sha'], recovery['after'])):
                 continue
             if run['conclusion'] != 'success':
                 self.block(f"Batch {run['id']} failed/cancelled before completion (including before admission)")
