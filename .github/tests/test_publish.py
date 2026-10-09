@@ -97,6 +97,29 @@ class PublishTests(GitFixture):
         self.entry['title'] = 'Description only'; self.write_manifest(); self.commit()
         self.assertEqual(self.keys(self.plan()), ['manifest.json'])
 
+    def test_unlisted_directories_and_file_only_changes_do_not_upload(self):
+        self.add_case('Unlisted Case', 'unlisted-case')
+        (self.root / self.entry['cover']['path']).write_bytes(b'modified')
+        self.commit()
+        self.assertEqual(self.keys(self.plan()), [])
+
+    def test_removed_entry_updates_published_manifest_and_preserves_resources(self):
+        # Model the existing published objects; the removed case is never read/uploaded.
+        objects = {item['key']: (self.root / item['path']).read_bytes()
+                   for item in self.plan(before=self.initial)['files']}
+        resources = {key: data for key, data in objects.items() if key != 'manifest.json'}
+        (self.root / self.entry['cover']['path']).unlink()
+        self.entries = []; self.write_manifest(); self.commit()
+        plan = self.plan()
+        self.assertEqual(self.keys(plan), ['manifest.json'])
+        class Upload:
+            def upload(inner, path, key):
+                objects[key] = path.read_bytes()
+        publisher.apply(self.root, plan, Upload())
+        self.assertEqual(json.loads(objects['manifest.json']), [])
+        self.assertEqual({key: data for key, data in objects.items() if key != 'manifest.json'},
+                         resources)
+
     def test_unchanged_range_empty_and_manifest_formatting_uploads_only_manifest(self):
         self.assertEqual(self.keys(self.plan()), [])
         (self.root / 'manifest.json').write_text(json.dumps(self.entries, indent=2)); self.commit()

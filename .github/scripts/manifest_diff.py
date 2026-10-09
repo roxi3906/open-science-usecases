@@ -1,5 +1,6 @@
 """Git/manifest metadata shared by checking and publication; never hash resource bytes."""
 import json
+from collections import Counter
 import re
 import subprocess
 
@@ -39,6 +40,15 @@ def manifests(root, before, after):
     old = git(root, 'show', before + ':manifest.json')
     new = git(root, 'show', after + ':manifest.json')
     return json.loads(old), json.loads(new), old != new
+
+
+def changed_entries(old, new):
+    # Ignore formatting/order and removed entries, but detect duplicate-count changes.
+    # Canonical JSON also keeps booleans distinct from numeric metadata.
+    previous = Counter(json.dumps(entry, sort_keys=True) for entry in old)
+    current = Counter(json.dumps(entry, sort_keys=True) for entry in new)
+    return [entry for entry in new
+            if previous[json.dumps(entry, sort_keys=True)] != current[json.dumps(entry, sort_keys=True)]]
 
 
 def local_resources(entries):
