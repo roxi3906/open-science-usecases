@@ -207,6 +207,11 @@ class StructureTests(unittest.TestCase):
 
     def test_checked_cases_publish_with_valid_checksums(self):
         publisher = SCRIPT.with_name("publish.py")
+        fake = self.root / 'bin'; fake.mkdir()
+        aws = fake / 'aws'
+        aws.write_text('#!' + sys.executable + '\n' + Path(__file__).with_name('fake_s3.py').read_text())
+        aws.chmod(0o755)
+        s3 = self.root / 's3'; s3.mkdir()
         for remote in (False, True):
             with self.subTest(remote=remote):
                 entry = self.case(remote=remote)
@@ -215,13 +220,14 @@ class StructureTests(unittest.TestCase):
                 self.manifest([entry]); self.commit()
                 self.check_manifest()
                 result = subprocess.run(
-                    [sys.executable, str(publisher), "--dry-run", "--before", self.base,
+                    [sys.executable, str(publisher), "--dry-run",
                      "--after", self.git("rev-parse", "HEAD").strip()], cwd=self.root,
-                    env={**os.environ, "AWS_TARGET_FOLDER": "s3://test-bucket/cases"},
+                    env={**os.environ, "AWS_TARGET_FOLDER": "s3://test-bucket/cases",
+                         "PATH": str(fake) + os.pathsep + os.environ['PATH'], "FAKE_S3_ROOT": str(s3)},
                     text=True, capture_output=True,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("Prepared {} local files".format(3 if remote else 4), result.stdout)
+                self.assertIn("Prepared {} files".format(3 if remote else 4), result.stdout)
                 self.assertTrue(all(method == "HEAD" for method, _ in self.http.requests))
 
     def test_science_source_requires_exactly_one_local_file_or_release_url(self):

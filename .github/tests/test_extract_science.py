@@ -4,6 +4,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 import os
+import re
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -47,6 +49,15 @@ def package_bytes(storage_key='artifacts/project/session/.provenance/version/con
 
 
 class DownloadHandler(BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        self.server.head_requests.append(self.path)
+        data = self.server.responses.get(self.path)
+        if data is None:
+            self.send_error(404); return
+        self.send_response(200)
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+
     def do_GET(self):
         self.server.requests.append(self.path)
         data = self.server.responses.get(self.path)
@@ -74,7 +85,7 @@ class ExtractionTests(GitFixture):
 
     def setUp(self):
         super().setUp()
-        self.http.requests = []; self.http.responses = {}
+        self.http.requests = []; self.http.responses = {}; self.http.head_requests = []
         self.output = self.root / 'staging'
         self.plan_file = self.root / 'publication-plan.json'
 
@@ -84,12 +95,21 @@ class ExtractionTests(GitFixture):
         resource['sha256'] = hashlib.sha256(data).hexdigest()
         resource['bytes'] = len(data)
         resource['release_url'] = self.url + '/release.science' if remote else ''
-        (self.root / resource['path']).write_bytes(data)
+        if remote:
+            (self.root / resource['path']).unlink(missing_ok=True)
+        else:
+            (self.root / resource['path']).write_bytes(data)
         self.write_manifest(); after = self.commit()
         self.base_url = self.url + '/repository/' + after
         self.http.responses = {
             '/release.science': data,
             '/repository/' + after + '/A%20Case/A%20Case.science': data}
+        for kind in ('cover', 'introduction'):
+            if kind in self.entry:
+                resource = self.entry[kind]
+                from urllib.parse import quote
+                self.http.responses['/repository/' + after + '/' + quote(resource['path'])] = (
+                    self.root / resource['path']).read_bytes()
         self.plan_file.write_text(json.dumps(self.plan()))
         return after
 
@@ -155,6 +175,11 @@ class ExtractionTests(GitFixture):
         self.assertEqual(calls[0], ['s3', 'rm', 's3://bucket/cases/a-case/extracted/',
                                    '--recursive', '--only-show-errors'])
         self.assertEqual(calls[-1][3], 's3://bucket/cases/manifest.json')
+        metadata = json.loads((s3 / 'metadata.json').read_text())
+        for path in (target / 'a-case/extracted').rglob('*'):
+            if path.is_file():
+                key = 'bucket/cases/' + path.relative_to(target).as_posix()
+                self.assertEqual(metadata[key]['sha256'], hashlib.sha256(path.read_bytes()).hexdigest())
 
     def test_bad_download_hash_keeps_plan_unready_and_prevents_s3_changes(self):
         self.declare(remote=True)
@@ -200,6 +225,7 @@ class ExtractionTests(GitFixture):
         broken = package_bytes(missing=True)
         other['case'].update(release_url=self.url + '/broken.science', bytes=len(broken),
                              sha256=hashlib.sha256(broken).hexdigest())
+        (self.root / other['case']['path']).unlink()
         self.write_manifest(); self.commit()
         self.plan_file.write_text(json.dumps(self.plan()))
         self.http.responses['/broken.science'] = broken
@@ -226,3 +252,97 @@ class ExtractionTests(GitFixture):
         self.git('commit', '--allow-empty', '-qm', 'test: different target')
         self.extract(expected=1)
         self.assertEqual(self.http.requests, [])
+
+    def pipeline(self, env):
+        # Execute the actual four workflow commands under Actions' fail-fast shell.
+        workflow = (SCRIPTS.parent / 'workflows/check-structure.yml').read_text().split('  publish:', 1)[1]
+        commands = re.findall(r'^        run: (python3 .+)$', workflow, re.M)
+        self.assertEqual(len(commands), 4)
+        script = '\n'.join(commands).replace('python3 .github/scripts/',
+                                               shlex.quote(sys.executable) + ' -B ' + str(SCRIPTS) + '/')
+        return subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', script], cwd=self.root,
+                              env={**env, 'TARGET_SHA': self.git('rev-parse', 'HEAD'),
+                                   'RUNNER_TEMP': str(self.root), 'CASE_FILE_BASE_URL': self.base_url},
+                              text=True, capture_output=True)
+
+    def test_workflow_full_incremental_and_removal_publications(self):
+        self.declare()
+        s3, env = self.s3_fixture()
+        result = self.pipeline(env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        target = s3 / 'bucket/cases'
+        self.assertEqual((target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
+        self.assertEqual((target / 'a-case/A Case.science').read_bytes(),
+                         (self.root / self.entry['case']['path']).read_bytes())
+        self.assertEqual(len(self.http.head_requests), 3)
+        self.assertEqual(len(self.http.requests), 1)
+        # The second run consults the newly published manifest and does no work.
+        (s3 / 'calls.jsonl').write_text(''); self.http.requests.clear(); self.http.head_requests.clear()
+        result = self.pipeline(env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
+        self.assertEqual([call[:2] for call in calls], [['s3api', 'get-object']])
+        self.assertEqual(self.http.requests + self.http.head_requests, [])
+        # Removing the record only replaces the root index.
+        self.entries = []; self.write_manifest(); self.commit()
+        (s3 / 'calls.jsonl').write_text('')
+        result = self.pipeline(env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((target / 'manifest.json').read_text(), '[]')
+        self.assertTrue((target / 'a-case/A Case.science').is_file())
+        self.assertTrue((target / 'a-case/extracted/session.json').is_file())
+        calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
+        self.assertEqual([call[:2] for call in calls], [['s3api', 'get-object'], ['s3', 'cp']])
+
+    def test_workflow_source_or_head_failure_prevents_download_and_s3_writes(self):
+        self.declare(remote=True)
+        s3, env = self.s3_fixture()
+        local = self.root / self.entry['cover']['path']
+        data = local.read_bytes(); local.unlink()
+        result = self.pipeline(env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('missing', result.stderr)
+        local.write_bytes(data)
+        self.http.responses['/release.science'] = b'wrong size'
+        result = self.pipeline(env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('HEAD reports', result.stderr)
+        self.assertEqual(self.http.requests, [])
+        calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
+        self.assertTrue(all(call[:2] == ['s3api', 'get-object'] for call in calls))
+
+    def test_workflow_replaces_science_and_preserves_old_manifest_on_upload_failure(self):
+        self.declare(remote=True)
+        s3, env = self.s3_fixture()
+        result = self.pipeline(env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        target = s3 / 'bucket/cases'
+        prior = (target / 'manifest.json').read_bytes()
+        self.declare(package_bytes(storage_key='uploads/replacement'), remote=True)
+        (s3 / 'calls.jsonl').write_text('')
+        result = self.pipeline({**env, 'FAKE_S3_FAIL': 'cp'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((target / 'manifest.json').read_bytes(), prior)
+        calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
+        self.assertEqual([call[:2] for call in calls],
+                         [['s3api', 'get-object'], ['s3', 'rm'], ['s3', 'cp']])
+        # A new run plans against the unchanged S3 index and retries replacement.
+        result = self.pipeline(env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((target / 'a-case/extracted/uploads/replacement').is_file())
+        self.assertFalse((target / 'a-case/extracted/artifacts').exists())
+        self.assertNotEqual((target / 'manifest.json').read_bytes(), prior)
+
+    def test_workflow_invalid_or_unreadable_baseline_stops_before_processing(self):
+        self.declare(remote=True)
+        s3, env = self.s3_fixture()
+        target = s3 / 'bucket/cases/manifest.json'
+        target.write_text('broken JSON')
+        for overrides in ({}, {'FAKE_S3_GET_ERROR': 'AccessDenied'}):
+            with self.subTest(overrides=overrides):
+                result = self.pipeline({**env, **overrides})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(target.read_text(), 'broken JSON')
+        self.assertEqual(self.http.requests + self.http.head_requests, [])
+        calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
+        self.assertTrue(all(call[:2] == ['s3api', 'get-object'] for call in calls))
