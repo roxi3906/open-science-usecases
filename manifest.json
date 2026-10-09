@@ -199,5 +199,51 @@
       "sha256": "304006a3ad0de43be54cac5428408889878a68b9bc802ddc696999f0712160a9",
       "path": "Why Do Coffee and Sleep Studies Disagree/Why Do Coffee and Sleep Studies Disagree.md"
     }
+  },
+  {
+    "title": "Test Local Case",
+    "name": "test-local-case",
+    "cover": {
+      "file_name": "Test Local Case.png",
+      "bytes": 197,
+      "sha256": "74dce83851bcf809e637edb336774a59cbed08783d00dfcdc50ac7a5af8ec0e6",
+      "path": "Test Local Case/Test Local Case.png"
+    },
+    "case": {
+      "file_name": "Test Local Case.science",
+      "bytes": 1115,
+      "sha256": "887c77ec21fc0568c7fed443f555f2285c203a657787bb73f61fa702b48a68fb",
+      "path": "Test Local Case/Test Local Case.science",
+      "release_url": ""
+    },
+    "introduction": {
+      "file_name": "Test Local Case.md",
+      "bytes": 794,
+      "sha256": "6d9b6ef6bc08b4f6e3b91612b9d22a07ea8af4514ee9795d3b4e5ee46d420ae1",
+      "path": "Test Local Case/Test Local Case.md"
+    }
+  },
+  {
+    "title": "Test Remote Case",
+    "name": "test-remote-case",
+    "cover": {
+      "file_name": "Test Remote Case.png",
+      "bytes": 197,
+      "sha256": "e08bb5253404d84629dde5b6b229daec5a3b5e7fa1c72f09e5084b96704a73c7",
+      "path": "Test Remote Case/Test Remote Case.png"
+    },
+    "case": {
+      "file_name": "Test Remote Case.science",
+      "bytes": 681599670,
+      "sha256": "b369898d150c4b5199f7b6f0014b2d2673e3d1c9dcdbc914745554341a51ddf1",
+      "path": "Test Remote Case/Test Remote Case.science",
+      "release_url": "https://github.com/aipoch/open-science-usecases/releases/download/completed-cases-2026-09-23/first-flight-vs-evening-flight.science"
+    },
+    "introduction": {
+      "file_name": "Test Remote Case.md",
+      "bytes": 947,
+      "sha256": "c6dc6bad074b9dd93702c536c1304a17d46d1183a14318ea0596be4e643995c9",
+      "path": "Test Remote Case/Test Remote Case.md"
+    }
   }
 ]
