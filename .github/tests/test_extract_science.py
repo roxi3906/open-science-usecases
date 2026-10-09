@@ -1,7 +1,7 @@
 """Download real tar.gz fixtures over HTTP; publish through a filesystem AWS boundary."""
 import hashlib
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import re
@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tarfile
 import threading
+
+from test_unpack import archive_bytes, valid_files
 
 from test_publish import GitFixture, SCRIPTS, publisher
 
@@ -23,8 +25,7 @@ def package_bytes(storage_key='artifacts/project/session/.provenance/version/con
         'messages': [{'content': 'Keep historical text: $DATA/artifacts/old'}]}}
     assets = [(storage_key, b'<svg>fixture</svg>'), ('uploads/project/data.csv', b'x,y\n1,2'),
               ('notebooks/project/run.json', b'{}')]
-    inventory = []
-    files = {}
+    files, inventory = valid_files()
     for index, (key, data) in enumerate(assets):
         path = 'objects/object-' + str(index)
         inventory.append({'path': path, 'storageKey': key, 'kind': 'file',
@@ -32,20 +33,14 @@ def package_bytes(storage_key='artifacts/project/session/.provenance/version/con
         if not (missing and index == 0):
             files[path] = data
     files['session.json'] = b'broken' if invalid_session else json.dumps(session).encode()
-    inventory.append({'path': 'session.json', 'kind': 'session'})
-    files['manifest.json'] = json.dumps({'format': 'open-science-session', 'schemaVersion': 1,
-                                        'inventory': inventory}).encode()
-    result = io.BytesIO()
-    with tarfile.open(fileobj=result, mode='w:gz') as archive:
-        # Metadata need not precede object members in an archive.
-        for name, data in files.items():
-            item = tarfile.TarInfo(name); item.size = len(data)
-            archive.addfile(item, io.BytesIO(data))
-        if unsafe_member:
-            item = tarfile.TarInfo(unsafe_member)
-            item.type = tarfile.SYMTYPE; item.linkname = '/tmp/outside'
-            archive.addfile(item)
-    return result.getvalue()
+    inventory[0].update(sizeBytes=len(files['session.json']),
+                        checksum=hashlib.sha256(files['session.json']).hexdigest())
+    extra = []
+    if unsafe_member:
+        item = tarfile.TarInfo(unsafe_member)
+        item.type = tarfile.SYMTYPE; item.linkname = '/tmp/outside'
+        extra.append((item, b''))
+    return archive_bytes(files, inventory, extra=extra)
 
 
 class DownloadHandler(BaseHTTPRequestHandler):
@@ -122,6 +117,28 @@ class ExtractionTests(GitFixture):
         self.assertEqual(result.returncode, expected, result.stderr)
         return result
 
+    def extracted_directory(self):
+        plan = json.loads(self.plan_file.read_text())
+        return Path(next(item['path'] for item in plan['files']
+                         if item['key'] == 'a-case/extracted/session.json')).parent
+
+    def test_staged_content_mutation_blocks_all_s3_writes(self):
+        self.declare(remote=True); self.extract()
+        (self.extracted_directory() / 'uploads/project/data.csv').write_bytes(b'bad bytes')
+        s3, env = self.s3_fixture()
+        result = self.publish(env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((s3 / 'calls.jsonl').exists())
+
+    def test_retry_of_ready_plan_cannot_leave_stale_readiness_on_failure(self):
+        self.declare(remote=True); self.extract()
+        self.http.responses['/release.science'] = b'broken'
+        self.extract(expected=1)
+        self.assertIsNot(json.loads(self.plan_file.read_text()).get('extraction_complete'), True)
+        s3, env = self.s3_fixture()
+        self.assertNotEqual(self.publish(env).returncode, 0)
+        self.assertFalse((s3 / 'calls.jsonl').exists())
+
     def s3_fixture(self):
         fake = self.root / 'bin'; fake.mkdir()
         aws = fake / 'aws'
@@ -141,7 +158,7 @@ class ExtractionTests(GitFixture):
             [sys.executable, '-B', str(SCRIPTS / 'publish.py'), '--apply-plan', str(self.plan_file)],
             cwd=self.root, env=env, text=True, capture_output=True)
 
-    def test_repository_package_is_downloaded_and_old_local_output_is_removed(self):
+    def test_repository_package_uses_fresh_output_and_preserves_existing_directories(self):
         after = self.declare()
         # Checkout bytes must not be used as the unpacking source.
         (self.root / self.entry['case']['path']).write_bytes(b'not the download')
@@ -149,13 +166,13 @@ class ExtractionTests(GitFixture):
         old.parent.mkdir(parents=True); old.write_text('stale')
         self.extract()
         self.assertEqual(self.http.requests, ['/repository/' + after + '/A%20Case/A%20Case.science'])
-        self.assertFalse(old.exists())
-        directory = old.parent
+        self.assertEqual(old.read_text(), 'stale')
+        directory = self.extracted_directory()
         self.assertEqual((directory / 'artifacts/project/session/.provenance/version/content').read_bytes(),
                          b'<svg>fixture</svg>')
         self.assertEqual((directory / 'uploads/project/data.csv').read_bytes(), b'x,y\n1,2')
         session = json.loads((directory / 'session.json').read_text())['session']
-        self.assertEqual(session['artifacts'][0]['path'], 'artifacts/project/session/.provenance/version/content')
+        self.assertEqual(session['artifacts'][0]['path'], '$DATA/artifacts/project/session/.provenance/version/content')
         self.assertEqual(session['cwd'], '$DATA/workspaces/history')
         self.assertEqual(session['messages'][0]['content'], 'Keep historical text: $DATA/artifacts/old')
 
@@ -171,6 +188,18 @@ class ExtractionTests(GitFixture):
         for name in ['a-case/extracted-other/keep.txt', 'other/extracted/keep.txt', 'a-case/cover.png']:
             self.assertEqual((target / name).read_bytes(), b'old')
         self.assertEqual((target / 'a-case/extracted/uploads/project/data.csv').read_bytes(), b'x,y\n1,2')
+        extracted = target / 'a-case/extracted'
+        self.assertFalse((extracted / 'objects').exists())
+        self.assertFalse((extracted / 'data').exists())
+        with tarfile.open(fileobj=io.BytesIO(self.http.responses['/release.science'])) as archive:
+            for name in ('session.json', 'records.json', 'manifest.json', 'README.md'):
+                self.assertEqual((extracted / name).read_bytes(), archive.extractfile(name).read())
+        self.assertEqual((target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
+        self.assertNotEqual((target / 'manifest.json').read_bytes(), (extracted / 'manifest.json').read_bytes())
+        plan = json.loads(self.plan_file.read_text())
+        self.assertEqual(plan['files'][-1]['key'], 'manifest.json')
+        self.assertIn('a-case/extracted/artifacts/project/session/.provenance/version/content',
+                      [item['key'] for item in plan['files']])
         calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
         self.assertEqual(calls[0], ['s3', 'rm', 's3://bucket/cases/a-case/extracted/',
                                    '--recursive', '--only-show-errors'])
@@ -203,6 +232,26 @@ class ExtractionTests(GitFixture):
                 self.assertEqual(self.plan_file.read_bytes(), original)
                 self.assertFalse((self.output / 'escape').exists())
 
+    def test_inventory_checksum_failure_and_truncated_download_prevent_s3_writes(self):
+        s3, env = self.s3_fixture()
+        files, inventory = valid_files()
+        files['records.json'] = b'{"corrupted":"metadata"}'
+        for data in (archive_bytes(files, inventory), package_bytes()[:-8]):
+            with self.subTest(size=len(data)):
+                self.declare(data, remote=True)
+                self.extract(expected=1)
+                self.assertEqual(list(self.output.iterdir()), [])
+                self.assertNotEqual(self.publish(env).returncode, 0)
+                self.assertFalse((s3 / 'calls.jsonl').exists())
+        self.declare(remote=True)
+        # Oversized and short HTTP bodies must both fail the declaration boundary.
+        original = self.http.responses['/release.science']
+        for body in (original + b'x', original[:-1]):
+            self.http.responses['/release.science'] = body
+            self.extract(expected=1)
+            self.assertNotEqual(self.publish(env).returncode, 0)
+            self.assertFalse((s3 / 'calls.jsonl').exists())
+
     def test_empty_package_plan_does_not_download_or_clear_anything(self):
         self.base_url = self.url
         self.plan_file.write_text(json.dumps(self.plan()))
@@ -230,7 +279,7 @@ class ExtractionTests(GitFixture):
         self.plan_file.write_text(json.dumps(self.plan()))
         self.http.responses['/broken.science'] = broken
         self.extract(expected=1)
-        self.assertTrue((self.output / 'a-case/extracted/session.json').is_file())
+        self.assertEqual(list(self.output.iterdir()), [])
         s3, env = self.s3_fixture()
         result = self.publish(env)
         self.assertNotEqual(result.returncode, 0)
@@ -239,7 +288,7 @@ class ExtractionTests(GitFixture):
 
     def test_missing_staged_file_blocks_deletion_even_with_ready_plan(self):
         self.declare(remote=True); self.extract()
-        (self.output / 'a-case/extracted/uploads/project/data.csv').unlink()
+        (self.extracted_directory() / 'uploads/project/data.csv').unlink()
         s3, env = self.s3_fixture()
         result = self.publish(env)
         self.assertNotEqual(result.returncode, 0)
