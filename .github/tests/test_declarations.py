@@ -12,14 +12,32 @@ class DeclarationTests(GitFixture):
         return checker.check_declarations(self.root, before or self.base, self.git('rev-parse', 'HEAD'))
 
     def test_same_size_change_requires_changed_declaration(self):
+        # A changed entry is being published, so its file edits still need declarations.
+        self.entry['introduction']['sha256'] = '3' * 64
         self.change(declaration='1')
         self.assertTrue(any('synchronize' in error for error in self.check()))
         self.change(declaration='2')
         self.assertEqual(self.check(), [])
 
-    def test_file_only_change_is_rejected(self):
+    def test_file_only_change_is_ignored(self):
         (self.root / self.entry['cover']['path']).write_bytes(b'modified'); self.commit()
-        self.assertTrue(any('synchronize' in error for error in self.check()))
+        self.assertEqual(self.check(), [])
+
+    def test_file_changes_in_unchanged_entries_are_ignored(self):
+        other = self.add_case('B Case', 'b-case')
+        self.write_manifest(); self.base = self.commit()
+        (self.root / other['cover']['path']).write_bytes(b'modified')
+        self.change('cover')
+        self.assertEqual(self.check(), [])
+
+    def test_restored_file_can_be_published_after_file_only_deletion(self):
+        # File-only batches can advance the baseline without changing published objects.
+        path = self.root / self.entry['cover']['path']
+        previous = self.base
+        path.unlink(); self.base = self.commit()
+        self.assertEqual(self.check(before=previous), [])
+        self.change('cover')
+        self.assertEqual(self.check(), [])
 
     def test_missing_and_malformed_declarations_on_related_resources(self):
         for declaration in (None, '', 'x' * 64, 'a' * 63, 123, {}, 'a' * 65):
@@ -65,9 +83,12 @@ class DeclarationTests(GitFixture):
         self.change(declaration='A')
         self.assertTrue(any('synchronize' in error for error in self.check(before=old)))
 
-    def test_type_change_to_symlink_is_rejected_even_with_unchanged_manifest(self):
+    def test_type_change_to_symlink_is_ignored_with_unchanged_manifest(self):
         path = self.root / self.entry['cover']['path']
         path.unlink(); path.symlink_to('../manifest.json'); self.commit()
+        self.assertEqual(self.check(), [])
+        self.entry['cover']['sha256'] = '2' * 64
+        self.write_manifest(); self.commit()
         self.assertTrue(any('regular file' in error for error in self.check()))
 
     def test_unchanged_legacy_case_without_introduction_is_not_revalidated(self):

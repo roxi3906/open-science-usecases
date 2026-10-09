@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Validate only cases affected by file changes or manifest edits."""
+"""Validate only cases added or modified in manifest.json."""
 
 import argparse
-from collections import Counter
 from http.client import HTTPException
 from ipaddress import IPv6Address
 import json
@@ -89,7 +88,7 @@ def resolve_base(base, merge_base=False, new_branch_base=None):
         base, merge_base = new_branch_base, True
     if re.fullmatch(r"0{40}|0{64}", base):
         # The initial push of the default branch has no previous tree.
-        log("This is the first push of the default branch. Checking all case directories.")
+        log("This is the first push of the default branch. Checking all manifest entries.")
         return None
     base = git("rev-parse", "--verify", base + "^{commit}").strip()
     if merge_base:
@@ -127,6 +126,8 @@ def manifest_entries(text, source):
 
 
 def directories(base, merge_base=False, new_branch_base=None):
+    from manifest_diff import changed_entries
+
     base = resolve_base(base, merge_base, new_branch_base)
     previous_paths = set(git("ls-tree", "-r", "--name-only", "-z", base).split("\0")) if base else set()
     current_paths = set(git("ls-tree", "-r", "--name-only", "-z", "HEAD").split("\0"))
@@ -140,52 +141,35 @@ def directories(base, merge_base=False, new_branch_base=None):
     manifest_changed = "manifest.json" in changed_paths
     log(f"Cases with file changes: {len(changed)}. Cases with path changes: {len(structural)}. "
         f"manifest.json changed: {manifest_changed}.")
-    if not changed and not manifest_changed:
+    if not manifest_changed:
+        log("manifest.json is unchanged. Skipping case resource checks.")
         return [], []
 
     manifest = manifest_entries(Path("manifest.json").read_text(encoding="utf-8"), "manifest.json")
-    selected = changed & current
+    selected = set()
     errors = []
     known = previous | current
-    if manifest_changed:
-        old_manifest = []
-        if base and "manifest.json" in previous_paths:
-            try:
-                old_manifest = manifest_entries(git("show", f"{base}:manifest.json"), "baseline manifest.json")
-            except ValueError:
-                log("The baseline manifest could not be parsed. Rechecking all current entries so it can be repaired.")
-        # Canonical JSON ignores formatting/key order, but distinguishes 1 from true.
-        old_counts = Counter(json.dumps(entry, sort_keys=True) for entry in old_manifest)
-        new_counts = Counter(json.dumps(entry, sort_keys=True) for entry in manifest)
-        for entries, other_counts, own_counts, is_current in (
-            (old_manifest, new_counts, old_counts, False),
-            (manifest, old_counts, new_counts, True),
-        ):
-            for entry in entries:
-                fingerprint = json.dumps(entry, sort_keys=True)
-                if own_counts[fingerprint] == other_counts[fingerprint]:
-                    continue
-                matches = entry_folders(entry, known)
-                selected.update(matches & current)
-                if is_current and not matches:
-                    errors.append(f"manifest.json: changed entry {show(entry.get('name'))} has no matching case directory. "
-                                  "Correct its name, title, and resource paths, or add the case directory.")
-                elif is_current:
-                    # A bad alias must not be replaced by an unchanged good entry
-                    # when the manifest stage looks up the directory's canonical name.
-                    for directory in matches:
-                        expected_name = kebab_case(directory)
-                        if entry.get("name") != expected_name:
-                            errors.append(f"manifest.json: changed entry has name {show(entry.get('name'))}, "
-                                          f"but its case directory {show(directory)} requires {show(expected_name)}. "
-                                          "Correct this entry's name and keep exactly one entry for the case.")
-
-    # Deleting a case and its entry together is valid; stale entries are not.
-    for entry in manifest:
-        removed = entry_folders(entry, known) & (previous - current)
-        if removed:
-            errors.append(f"manifest.json: entry {show(entry.get('name'))} still refers to removed directories "
-                          f"{show(sorted(removed))}. Remove this entry too, or update it to the renamed case directory.")
+    old_manifest = []
+    if base and "manifest.json" in previous_paths:
+        try:
+            old_manifest = manifest_entries(git("show", f"{base}:manifest.json"), "baseline manifest.json")
+        except ValueError:
+            log("The baseline manifest could not be parsed. Rechecking all current entries so it can be repaired.")
+    # Only surviving additions/edits select cases. File changes and removed entries
+    # never opt a directory into publication checks on their own.
+    for entry in changed_entries(old_manifest, manifest):
+        matches = entry_folders(entry, known) & current
+        selected.update(matches)
+        if not matches:
+            errors.append(f"manifest.json: changed entry {show(entry.get('name'))} has no matching case directory. "
+                          "Correct its name, title, and resource paths, or add the case directory.")
+        for directory in matches:
+            # Do not let a bad alias hide behind an unchanged canonical entry.
+            expected_name = kebab_case(directory)
+            if entry.get("name") != expected_name:
+                errors.append(f"manifest.json: changed entry has name {show(entry.get('name'))}, "
+                              f"but its case directory {show(directory)} requires {show(expected_name)}. "
+                              "Correct this entry's name and keep exactly one entry for the case.")
 
     cases = []
     for directory in sorted(selected):
@@ -401,9 +385,15 @@ def validate_manifest(cases):
 
 def check_declarations(root, before, after):
     """Check Git object changes against declarations, without hashing file contents."""
-    from manifest_diff import git as range_git, local_resources, manifests
-    old, new, _ = manifests(root, before, after)
-    previous, current = local_resources(old), local_resources(new)
+    from manifest_diff import changed_entries, git as range_git, local_resources, manifests
+    old, new, manifest_changed = manifests(root, before, after)
+    if not manifest_changed:
+        return []
+    # Match directory selection: unrelated file changes and removed entries are ignored.
+    affected = changed_entries(old, new)
+    if not affected:
+        return []
+    previous, current = local_resources(old), local_resources(affected)
     changed = set(range_git(root, "diff", "--no-renames", "--diff-filter=AMT", "--name-only",
                             "-z", before, after).split("\0")) - {""}
     errors = []
@@ -421,8 +411,12 @@ def check_declarations(root, before, after):
             errors.append(f"{key}: local resource must be a committed regular file.")
             continue
         if prior and prior["path"] == path and path in changed:
-            old_object = range_git(root, "rev-parse", before + ":" + path).strip()
-            new_object = range_git(root, "rev-parse", after + ":" + path).strip()
+            # A file-only batch may have removed this path without changing its
+            # declaration. Restoring it has no prior regular-file object to compare.
+            old_listing = range_git(root, "ls-tree", before, "--", path).split()
+            if not old_listing or old_listing[0] not in ("100644", "100755"):
+                continue
+            old_object, new_object = old_listing[2], listing[2]
             previous_sha = prior.get("sha256")
             if old_object != new_object and isinstance(previous_sha, str) and previous_sha.lower() == declaration.lower():
                 errors.append(f"{key}: file content changed; synchronize its manifest sha256 declaration.")
@@ -478,8 +472,8 @@ def main():
             log(f"FAIL: {stage} found {len(errors)} {noun}. Affected case directories: {len(cases)}. "
                 "Follow the fixes above, commit the changes, and rerun the workflow.")
         elif not cases:
-            log("PASS: No relevant case changes need validation. Case files and manifest entries are unchanged, "
-                "or cases and their entries were removed together. Skipping further checks.")
+            log("PASS: No relevant case changes need validation. No manifest entries were added or modified. "
+                "Skipping case resource checks; any changed manifest is still published.")
         else:
             log(f"PASS: {stage} finished. No problems found. Affected case directories: {len(cases)}.")
         return 1 if errors else 0
