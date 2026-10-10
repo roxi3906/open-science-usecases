@@ -23,6 +23,29 @@
     }
   },
   {
+    "title": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim",
+    "name": "birthday-paradox-simulation-verifying-the-23-person-50-claim",
+    "cover": {
+      "file_name": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim.png",
+      "bytes": 2439693,
+      "sha256": "8b4f4985ddca36292d0663f39267c35b9b3392bfd8cd107c2cc2503571697e0b",
+      "path": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim/Birthday Paradox Simulation Verifying the 23-Person 50% Claim.png"
+    },
+    "case": {
+      "file_name": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim.science",
+      "bytes": 511124,
+      "sha256": "2928cf57b1a54e825f00fa216c9f0796808c3f01236a54101f5d06be9aabf2ee",
+      "path": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim/Birthday Paradox Simulation Verifying the 23-Person 50% Claim.science",
+      "release_url": ""
+    },
+    "introduction": {
+      "file_name": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim.md",
+      "bytes": 5067,
+      "sha256": "374fe21a52d0f0fd989ea9f21ca21a1bf7f4651a9b28f7a086b2b425c8addb57",
+      "path": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim/Birthday Paradox Simulation Verifying the 23-Person 50% Claim.md"
+    }
+  },
+  {
     "title": "Can a Simple Algorithm Beat AI at Wordle",
     "name": "can-a-simple-algorithm-beat-ai-at-wordle",
     "cover": {
