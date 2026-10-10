@@ -71,7 +71,8 @@ def is_image_filename(filename):
     # Check the image extension without reading or downloading resource bodies.
     if not isinstance(filename, str):
         return False
-    media_type, encoding = mimetypes.guess_type(filename)
+    # Literal colons and question marks must not be parsed as a URL scheme/query.
+    media_type, encoding = mimetypes.guess_type(quote(filename, safe=""))
     return bool(media_type and media_type.startswith("image/") and encoding is None)
 
 

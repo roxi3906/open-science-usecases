@@ -84,11 +84,11 @@ class StructureTests(unittest.TestCase):
         self.git("add", ".")
         self.git("-c", "commit.gpgsign=false", "commit", "-qm", "test: fixture")
 
-    def case(self, remote=False, cover_extension="png"):
+    def case(self, remote=False, cover_extension="png", title=TITLE):
         resources = {}
         for key, extension in (("cover", cover_extension), ("introduction", "md"), ("case", "science")):
-            filename = f"{TITLE}.{extension}"
-            path = f"{TITLE}/{filename}"
+            filename = f"{title}.{extension}"
+            path = f"{title}/{filename}"
             content = f"fixture {extension}"
             resources[key] = {
                 "file_name": filename,
@@ -99,7 +99,7 @@ class StructureTests(unittest.TestCase):
             if key != "case" or not remote:
                 self.write(path, content)
         resources["case"]["release_url"] = self.url if remote else ""
-        entry = {"title": TITLE, "name": NAME, **resources}
+        entry = {"title": title, "name": CHECKER["kebab_case"](title), **resources}
         self.manifest([entry])
         return entry
 
@@ -146,6 +146,15 @@ class StructureTests(unittest.TestCase):
         self.check_manifest()
 
     # Exercise the actual directory and manifest commands for each image format.
+    def test_cover_with_url_punctuation_passes_both_stages(self):
+        self.case(title="NVDA: ALL AT ONCE OR FOUR WEEKS?")
+        self.commit()
+        self.check_manifest()
+        self.assertIn(("HEAD", "/repository/NVDA%3A%20ALL%20AT%20ONCE%20OR%20FOUR%20WEEKS%3F/"
+                              "NVDA%3A%20ALL%20AT%20ONCE%20OR%20FOUR%20WEEKS%3F.png"),
+                      self.http.requests)
+        self.assertTrue(all(method == "HEAD" for method, _ in self.http.requests))
+
     def test_image_covers_pass_both_stages_using_declared_path(self):
         for extension in ("png", "jpg", "JPEG", "webp", "gif", "svg", "avif", "bmp", "tiff", "ico"):
             with self.subTest(extension=extension):
