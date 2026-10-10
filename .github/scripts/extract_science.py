@@ -34,6 +34,15 @@ def relative_path(value):
     return value
 
 
+def repository_path(value):
+    # Repository filenames are URL components, not portable extraction paths.
+    if (not isinstance(value, str) or not value or len(value) > 2048
+            or re.search(r'[\x00-\x1f\x7f\\]', value)
+            or any(part in ('', '.', '..') for part in value.split('/'))):
+        raise ValueError('Unsafe repository path: ' + repr(value))
+    return quote(value, safe='/')
+
+
 def check_layout(entries):
     # Include implicit parents: A/x and a/y collide even when the leaves differ.
     nodes, explicit = {}, set()
@@ -197,7 +206,7 @@ def expand_plan(root, plan, output, base_url):
             resource = package['resource']
             url = resource.get('release_url')
             if not url:
-                url = base_url.rstrip('/') + '/' + quote(relative_path(resource['path']), safe='/')
+                url = base_url.rstrip('/') + '/' + repository_path(resource['path'])
             directory = batch / package['name']
             directory.mkdir()
             downloaded = directory / 'package.science'

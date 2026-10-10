@@ -122,6 +122,33 @@ class ExtractionTests(GitFixture):
         return Path(next(item['path'] for item in plan['files']
                          if item['key'] == 'a-case/extracted/session.json')).parent
 
+    def test_repository_punctuation_is_encoded_without_weakening_archive_paths(self):
+        self.entry = self.add_case('Case: Why?', 'case-why')
+        after = self.declare()
+        request = '/repository/' + after + '/Case%3A%20Why%3F/Case%3A%20Why%3F.science'
+        self.http.responses[request] = package_bytes()
+        self.extract()
+        self.assertEqual(self.http.requests, [request])
+        plan = json.loads(self.plan_file.read_text())
+        restored = next(item for item in plan['files']
+                        if item['key'] == 'case-why/extracted/uploads/project/data.csv')
+        self.assertEqual(Path(restored['path']).read_bytes(), b'x,y\n1,2')
+        self.declare(package_bytes(storage_key='uploads/unsafe?.csv'))
+        request = '/repository/' + self.git('rev-parse', 'HEAD') + '/Case%3A%20Why%3F/Case%3A%20Why%3F.science'
+        self.http.responses[request] = package_bytes(storage_key='uploads/unsafe?.csv')
+        self.extract(expected=1)
+
+    def test_unsafe_repository_paths_fail_before_any_download(self):
+        self.declare()
+        plan = json.loads(self.plan_file.read_text())
+        for path in ('../escape.science', '/absolute.science', 'A/../escape.science',
+                     'A//file.science', 'A/evil\\file.science', 'A/evil\nfile.science'):
+            with self.subTest(path=path):
+                plan['packages'][0]['resource']['path'] = path
+                self.plan_file.write_text(json.dumps(plan))
+                self.extract(expected=1)
+                self.assertEqual(self.http.requests, [])
+
     def test_staged_content_mutation_blocks_all_s3_writes(self):
         self.declare(remote=True); self.extract()
         (self.extracted_directory() / 'uploads/project/data.csv').write_bytes(b'bad bytes')
