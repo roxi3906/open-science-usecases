@@ -114,6 +114,20 @@ jobs:
           AWS_PAGER: ""
         run: python3 .github/scripts/publish.py --apply-plan "$RUNNER_TEMP/publication-plan.json"
 
+      - name: Invalidate the published manifest in CloudFront
+        if: steps.apply.outcome == 'success'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_DISTRIBUITION_ID: ${{ vars.AWS_DISTRIBUITION_ID }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_PAGER: ""
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$AWS_DISTRIBUITION_ID" \
+            --paths "/open-science/usecases/manifest.json"
+
       - name: Explain publication result
         if: always()
         env:
