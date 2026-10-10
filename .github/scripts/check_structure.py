@@ -336,7 +336,7 @@ def validate_resource(resource, case, key, extension, errors):
             validate_head_size(base_url.rstrip("/") + "/" + quote(expected_path), size, label, errors)
 
 
-def validate_manifest(cases):
+def validate_manifest(cases, declared_only=False):
     if not isinstance(cases, list):
         raise ValueError("CASES_JSON must be a JSON array from the directories step. "
                          "Pass steps.directories.outputs.cases to the manifest step's CASES_JSON environment variable.")
@@ -372,7 +372,11 @@ def validate_manifest(cases):
                               "Keep exactly one matching entry and remove or rename the duplicates.")
             continue
         entry = entries[0]
-        require_keys(entry, {"title", "name", "cover", "case", "introduction"}, label, errors)
+        # Publication supports legacy entries without an introduction, while PR
+        # admission retains the existing requirement for new or edited cases.
+        required_keys = {"title", "name", "cover", "case"}
+        require_keys(entry, required_keys if declared_only else required_keys | {"introduction"},
+                     label, errors, optional=("introduction",))
         if "title" in entry and entry["title"] != directory:
             errors.append(f"{label}.title: found {show(entry['title'])}. Set title to {show(directory)} "
                           "so it matches the directory name exactly.")
@@ -430,7 +434,8 @@ def main():
     scan.add_argument("--base", required=True, help="Git base commit; all-zero SHA means an empty tree")
     scan.add_argument("--merge-base", action="store_true", help="Compare to the common ancestor for a PR")
     scan.add_argument("--new-branch-base", help="Default branch ref for a new feature branch's first push")
-    commands.add_parser("manifest", help="Read directory results from CASES_JSON")
+    manifest = commands.add_parser("manifest", help="Check selected manifest entries")
+    manifest.add_argument("--plan", type=Path, help="Use the S3-based publication plan")
     declarations = commands.add_parser("declarations", help="Check changed local resource SHA declarations")
     declarations.add_argument("--base", required=True)
     declarations.add_argument("--after", required=True)
@@ -460,11 +465,14 @@ def main():
                     stream.write(f"cases={payload}\n")
             print(payload)
         else:
-            if not os.environ.get("CASES_JSON"):
+            if args.plan:
+                cases = read_json(args.plan.read_text(encoding="utf-8"), "publication plan")["cases"]
+            elif not os.environ.get("CASES_JSON"):
                 raise ValueError("CASES_JSON is missing or empty. Run the directories step first, then pass "
                                  "steps.directories.outputs.cases to the manifest step's CASES_JSON environment variable.")
-            cases = read_json(os.environ["CASES_JSON"], "CASES_JSON (from the directories step)")
-            errors = validate_manifest(cases)
+            else:
+                cases = read_json(os.environ["CASES_JSON"], "CASES_JSON (from the directories step)")
+            errors = validate_manifest(cases, declared_only=bool(args.plan))
         for error in errors:
             report_error(error)
         if errors:
