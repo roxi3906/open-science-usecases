@@ -46,6 +46,29 @@
     }
   },
   {
+    "title": "Can AI Fix a Tiny Bug",
+    "name": "can-ai-fix-a-tiny-bug",
+    "cover": {
+      "file_name": "Can AI Fix a Tiny Bug.png",
+      "bytes": 2179124,
+      "sha256": "8f88821aef94efe1df36317eb6af9a57ecf6ecd1f443005ca0e2e10b1900af0f",
+      "path": "Can AI Fix a Tiny Bug/Can AI Fix a Tiny Bug.png"
+    },
+    "case": {
+      "file_name": "Can AI Fix a Tiny Bug.science",
+      "bytes": 31944,
+      "sha256": "40bc22850deaed449fab961666ea647a64fca1838f6a3129e4f6a7438c319165",
+      "path": "Can AI Fix a Tiny Bug/Can AI Fix a Tiny Bug.science",
+      "release_url": ""
+    },
+    "introduction": {
+      "file_name": "Can AI Fix a Tiny Bug.md",
+      "bytes": 3220,
+      "sha256": "6e878e199d6feec1635c01d30eb4a54711b9ce89689beb63dc1412a229300f0d",
+      "path": "Can AI Fix a Tiny Bug/Can AI Fix a Tiny Bug.md"
+    }
+  },
+  {
     "title": "Can AI Spot the Errors in a Spreadsheet",
     "name": "can-ai-spot-the-errors-in-a-spreadsheet",
     "cover": {
