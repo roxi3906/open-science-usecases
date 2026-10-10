@@ -161,6 +161,29 @@
     }
   },
   {
+    "title": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers",
+    "name": "coin-flip-streak-simulation-luck-vs-skill-across-1-000-guessers",
+    "cover": {
+      "file_name": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.png",
+      "bytes": 2642434,
+      "sha256": "2dcbe3f87dd025758c5dfbddb8bd3572496413b66c84aba797cc0619aea982ce",
+      "path": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.png"
+    },
+    "case": {
+      "file_name": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.science",
+      "bytes": 164909,
+      "sha256": "3e8ffbbd3d90f1abe48ebad35804416784b0fd13f5a65a2af7d76403983c7a90",
+      "path": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.science",
+      "release_url": ""
+    },
+    "introduction": {
+      "file_name": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.md",
+      "bytes": 5828,
+      "sha256": "5af7c26979229ec313909933b21c03a30a66e745c2515b6d1b937b249c0f1efa",
+      "path": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.md"
+    }
+  },
+  {
     "title": "First Flight vs. Evening Flight - Which Is More Reliable",
     "name": "first-flight-vs-evening-flight-which-is-more-reliable",
     "cover": {
@@ -175,6 +198,29 @@
       "sha256": "b369898d150c4b5199f7b6f0014b2d2673e3d1c9dcdbc914745554341a51ddf1",
       "path": "First Flight vs. Evening Flight - Which Is More Reliable/First Flight vs. Evening Flight - Which Is More Reliable.science",
       "release_url": "https://github.com/aipoch/open-science-usecases/releases/download/completed-cases-2026-09-23/first-flight-vs-evening-flight.science"
+    }
+  },
+  {
+    "title": "From 10 Metres Up, a 39° Throw Beats 45°",
+    "name": "from-10-metres-up-a-39-throw-beats-45",
+    "cover": {
+      "file_name": "From 10 Metres Up, a 39° Throw Beats 45°.png",
+      "bytes": 2546762,
+      "sha256": "1f0d3ed30fa472d838615f15060a5c0c20683535494fb23fa14ae5328fa8a60a",
+      "path": "From 10 Metres Up, a 39° Throw Beats 45°/From 10 Metres Up, a 39° Throw Beats 45°.png"
+    },
+    "case": {
+      "file_name": "From 10 Metres Up, a 39° Throw Beats 45°.science",
+      "bytes": 822326,
+      "sha256": "9a57e2c5daebd442c0947c327fde48d012e752e79460eead98758f2beda49679",
+      "path": "From 10 Metres Up, a 39° Throw Beats 45°/From 10 Metres Up, a 39° Throw Beats 45°.science",
+      "release_url": ""
+    },
+    "introduction": {
+      "file_name": "From 10 Metres Up, a 39° Throw Beats 45°.md",
+      "bytes": 3713,
+      "sha256": "df672c0c94d9e38ff920c353c7c9f3044764a10f43ce26368e6aed22cdd6219b",
+      "path": "From 10 Metres Up, a 39° Throw Beats 45°/From 10 Metres Up, a 39° Throw Beats 45°.md"
     }
   },
   {
