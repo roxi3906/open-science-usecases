@@ -11,7 +11,7 @@ import sys
 import tempfile
 from urllib.parse import urlsplit
 
-from check_structure import is_science_url, kebab_case, read_json
+from check_structure import is_image_filename, is_science_url, kebab_case, read_json
 from manifest_diff import changed_entries, git, local_resources
 
 
@@ -34,7 +34,7 @@ def read_manifest(text, source):
         if not {'cover', 'case'} <= entry.keys():
             raise ValueError(source + ': missing cover or case resource')
         folders = set()
-        for kind, extension in (('cover', '.png'), ('case', '.science'), ('introduction', '.md')):
+        for kind, extension in (('cover', None), ('case', '.science'), ('introduction', '.md')):
             if kind not in entry:
                 continue  # Legacy cases can omit an introduction.
             resource = entry[kind]
@@ -45,7 +45,8 @@ def read_manifest(text, source):
                     or len(path.split('/')) != 2
                     or any(part in ('', '.', '..') for part in path.split('/'))
                     or PurePosixPath(path).is_absolute()
-                    or filename != path.split('/')[-1] or not filename.endswith(extension)):
+                    or filename != path.split('/')[-1]
+                    or not (is_image_filename(filename) if kind == 'cover' else filename.endswith(extension))):
                 raise ValueError(source + ': invalid resource path or file_name')
             folders.add(path.split('/')[0])
             if type(resource.get('bytes')) is not int or resource['bytes'] < 0:

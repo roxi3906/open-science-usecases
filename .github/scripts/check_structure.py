@@ -5,6 +5,7 @@ import argparse
 from http.client import HTTPException
 from ipaddress import IPv6Address
 import json
+import mimetypes
 import os
 from pathlib import Path
 import re
@@ -64,6 +65,14 @@ def kebab_case(title):
 
 def regular_file(path):
     return path.is_file() and not path.is_symlink()
+
+
+def is_image_filename(filename):
+    # Check the image extension without reading or downloading resource bodies.
+    if not isinstance(filename, str):
+        return False
+    media_type, encoding = mimetypes.guess_type(filename)
+    return bool(media_type and media_type.startswith("image/") and encoding is None)
 
 
 def is_science_url(url):
@@ -180,9 +189,16 @@ def directories(base, merge_base=False, new_branch_base=None):
             problems.append("The directory name becomes empty after conversion to kebab-case. "
                             "Rename it to include Latin letters or digits, such as My New Case.")
         if directory in structural:
-            for extension in ("md", "png"):
-                if not regular_file(folder / f"{directory}.{extension}"):
-                    problems.append(file_problem(folder / f"{directory}.{extension}"))
+            if not regular_file(folder / f"{directory}.md"):
+                problems.append(file_problem(folder / f"{directory}.md"))
+            # Keep the same-name rule while allowing any recognized image format.
+            if not any(path.stem == directory and is_image_filename(path.name) and regular_file(path)
+                       for path in folder.glob("*")):
+                covers = [entry.get("cover", {}).get("path") for entry in manifest
+                          if entry.get("name") == name and isinstance(entry.get("cover"), dict)]
+                problems.append(f"Couldn't find an image cover with the same name as its case directory. "
+                                f"Add a same-named image file and update cover.file_name and cover.path "
+                                f"in manifest.json (declared paths: {show(covers)}).")
         else:
             log(f"Skipping directory/name checks for {show(directory)}: its paths are unchanged. "
                 "Rechecking its manifest entry and resources for file or metadata changes.")
@@ -294,6 +310,12 @@ def validate_resource(resource, case, key, extension, errors):
         errors.append(f"{label}.sha256: found {show(checksum)}. Enter exactly 64 hexadecimal characters "
                       "(0-9, a-f, A-F), without whitespace. Compute SHA-256 from the file on your "
                       "device before committing and update manifest.json; CI checks the format only.")
+    if key == "cover":
+        if not is_image_filename(resource["file_name"]):
+            errors.append(f"{label}.file_name: found {show(resource['file_name'])}. "
+                          "Use a filename with an image/* extension, such as .jpg, .webp, or .svg.")
+            return
+        extension = Path(resource["file_name"]).suffix.lstrip(".")
     filename = f"{directory}.{extension}"
     expected_path = f"{directory}/{filename}"
     for field, expected in (("file_name", filename), ("path", expected_path)):
@@ -380,7 +402,7 @@ def validate_manifest(cases, declared_only=False):
         if "title" in entry and entry["title"] != directory:
             errors.append(f"{label}.title: found {show(entry['title'])}. Set title to {show(directory)} "
                           "so it matches the directory name exactly.")
-        for key, extension in (("cover", "png"), ("case", "science"), ("introduction", "md")):
+        for key, extension in (("cover", None), ("case", "science"), ("introduction", "md")):
             if key in entry:
                 validate_resource(entry[key], case, key, extension, errors)
     return errors

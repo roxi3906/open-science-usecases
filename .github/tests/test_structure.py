@@ -84,9 +84,9 @@ class StructureTests(unittest.TestCase):
         self.git("add", ".")
         self.git("-c", "commit.gpgsign=false", "commit", "-qm", "test: fixture")
 
-    def case(self, remote=False):
+    def case(self, remote=False, cover_extension="png"):
         resources = {}
-        for key, extension in (("cover", "png"), ("introduction", "md"), ("case", "science")):
+        for key, extension in (("cover", cover_extension), ("introduction", "md"), ("case", "science")):
             filename = f"{TITLE}.{extension}"
             path = f"{TITLE}/{filename}"
             content = f"fixture {extension}"
@@ -144,6 +144,28 @@ class StructureTests(unittest.TestCase):
             "has_local_science": True,
         }])
         self.check_manifest()
+
+    # Exercise the actual directory and manifest commands for each image format.
+    def test_image_covers_pass_both_stages_using_declared_path(self):
+        for extension in ("png", "jpg", "JPEG", "webp", "gif", "svg", "avif", "bmp", "tiff", "ico"):
+            with self.subTest(extension=extension):
+                entry = self.case(cover_extension=extension)
+                self.commit()
+                self.http.requests = []
+                self.check_manifest()
+                self.assertIn(("HEAD", "/repository/" + quote(entry["cover"]["path"])),
+                              self.http.requests)
+                self.assertTrue(all(method == "HEAD" for method, _ in self.http.requests))
+                (self.root / entry["cover"]["path"]).unlink()
+
+    def test_nonimage_cover_is_rejected_even_with_an_unlisted_png(self):
+        for extension in ("txt", "pdf", "mp4", "unknown", "png.gz"):
+            with self.subTest(extension=extension):
+                self.case(cover_extension=extension)
+                self.write(f"{TITLE}/{TITLE}.png", "unlisted image")
+                self.commit()
+                result = self.check_manifest(expected=1)
+                self.assertIn("image", result.stderr)
 
     def test_all_repository_resources_use_head_without_recomputing_checksums(self):
         entry = self.case()

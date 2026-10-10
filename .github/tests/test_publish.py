@@ -71,6 +71,30 @@ class GitFixture(unittest.TestCase):
 
 
 class PublishTests(GitFixture):
+    # Publication must retain the cover extension accepted by the check stages.
+    def test_image_cover_formats_are_preserved_in_publication_plan(self):
+        for extension in ('jpg', 'JPEG', 'webp', 'gif', 'svg', 'avif'):
+            with self.subTest(extension=extension):
+                cover = self.entry['cover']
+                filename = 'A Case.' + extension
+                path = 'A Case/' + filename
+                (self.root / cover['path']).rename(self.root / path)
+                cover.update(file_name=filename, path=path)
+                self.write_manifest()
+                after = self.commit()
+                plan = publisher.prepare(self.root, None, after)
+                self.assertIn('a-case/' + filename, self.keys(plan))
+                self.assertFalse(publisher.prepare(self.root, json.dumps(self.entries), after)['files'])
+
+    def test_nonimage_cover_is_rejected_by_publication(self):
+        for extension in ('txt', 'pdf', 'mp4', 'unknown', 'png.gz'):
+            with self.subTest(extension=extension):
+                entry = copy.deepcopy(self.entry)
+                entry['cover'].update(file_name='A Case.' + extension,
+                                      path='A Case/A Case.' + extension)
+                with self.assertRaises(ValueError):
+                    publisher.read_manifest(json.dumps([entry]), 'fixture')
+
     def test_missing_s3_manifest_plans_every_declared_local_resource_and_package(self):
         plan = publisher.prepare(self.root, None, self.base)
         self.assertEqual(self.keys(plan), ['a-case/A Case.png', 'a-case/A Case.science',
