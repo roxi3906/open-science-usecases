@@ -171,7 +171,7 @@ class PublishTests(GitFixture):
             def commit_manifest(inner, path):
                 inner.manifest = path.read_text()
                 objects['manifest.json'] = path.read_bytes()
-            def refresh_cdn(inner, case_name=None, final=False):
+            def refresh_cdn(inner, case_name=None):
                 pass
             def upload(inner, path, key):
                 objects[key] = path.read_bytes()

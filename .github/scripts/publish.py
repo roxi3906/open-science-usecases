@@ -234,13 +234,11 @@ class S3:
                         '--content-type', 'application/json', '--metadata', 'sha256=' + file_integrity(path)[1],
                         *condition], capture_output=True, text=True, check=True)
 
-    def refresh_cdn(self, case_name=None, final=False):
+    def refresh_cdn(self, case_name=None):
         distribution = os.environ['AWS_DISTRIBUITION_ID']
-        # Final sync repairs cache refresh failures from prior runs, including resource caches.
+        # Manifest-only checkpoints keep unrelated resource caches warm.
         paths = [quote('/' + self.manifest_key, safe='/')]
-        if final:
-            paths = [quote('/' + self.object_key(''), safe='/') + '*']
-        elif case_name:
+        if case_name:
             paths.append(quote('/' + self.object_key(case_name + '/'), safe='/') + '*')
         print('CDN paths: ' + json.dumps(paths), flush=True)
         result = subprocess.run(['aws', 'cloudfront', 'create-invalidation',
@@ -377,8 +375,7 @@ def apply(root, plan, s3, output=None):
                 phase = 'cdn'
                 state['cdn'] = 'uploading'
                 reporter.event(step, phase, 'uploading')
-                s3.refresh_cdn(step['name'] if step['files'] else None,
-                               final=step['operation'] == 'FINAL_SYNC')
+                s3.refresh_cdn(step['name'] if step['files'] else None)
                 state['cdn'] = 'completed'
                 state['status'] = 'completed'
                 reporter.event(step, 'step', 'completed')
