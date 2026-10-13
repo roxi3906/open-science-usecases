@@ -1,22 +1,26 @@
 # Case Validation
 
-Validation selects added or modified entries that still exist in the root `manifest.json`. Resource-only changes, removed entries, reordering, and JSON formatting changes do not trigger scans of other cases. Fully remote entries are also selected and need no local directory. Each `name` must be unique across the entire index; titles and directory names can be chosen independently.
+Resource validation selects added or modified entries that still exist in the root `manifest.json`. Resource-only changes, removed entries, reordering, and JSON formatting changes do not trigger scans of other cases' resources. Catalog fields and mappings are checked across the entire target manifest, including unchanged entries, so incremental checks cannot miss collisions with existing catalogs. Fully remote entries are also selected and need no local directory. Each `name` must be unique across the entire index; titles and directory names can be chosen independently.
 
 ## Field rules
 
-The top level is an array. Each entry contains `title`, `name`, `cover`, `case`, and `introduction`. All three resources share the same structure:
+The top level is an array. Each entry contains `title`, `name`, `catalog`, `catalog_name`, `cover`, `case`, and `introduction`. Both classification fields must be strings; two empty strings (`""`) mean unclassified. Missing fields, null, whitespace-only values, and filling only one field are invalid.
+
+A nonempty `catalog` is the display label and a single classification directory name. Derive `catalog_name` by converting `catalog` to ASCII kebab-case as specified in [AGENTS.md](../AGENTS.md). Mismatched conversions, non-ASCII characters, empty conversions, and different catalogs with the same converted identifier are rejected without automatic translation, transliteration, or numbering. Reusing the same catalog is allowed. All resource paths, including remote sources, must start with the literal `<catalog>/`; arbitrary depth and separate resource directories are allowed beneath it. Catalog names cannot contain traversal, separators, control characters, or drive-letter paths.
+
+All three resources share the same structure:
 
 | Field | Requirement |
 | --- | --- |
 | `file_name` | Actual filename, equal to the final segment of `path` |
-| `path` | Safe repository-relative path; directory names, depth, and prefixes are unrestricted, and the three resources may occupy different directories; required for remote sources as well |
+| `path` | Safe repository-relative path; classified resources start with `<catalog>/` and may use arbitrary subdirectories; unclassified prefixes are unrestricted; required for remote sources as well |
 | `bytes` | Nonnegative integer byte count; booleans and strings are not accepted |
 | `sha256` | 64 hexadecimal characters with no whitespace; comparisons are case-insensitive |
 | `release_url` | `""` selects a local source; a nonempty value must be a valid HTTP(S) download URL and cannot contain only whitespace |
 
 The cover must have an image extension, the package must be a `.science` file, and the introduction must be a `.md` file. Duplicate JSON fields, missing or unknown fields, absolute paths, backslashes, control characters, empty path segments, and `.` / `..` segments are rejected. Windows drive-letter paths are also rejected. New manifests must explicitly provide all three `release_url` fields. Historical S3 baselines allow legacy root-level paths and treat missing cover and introduction URLs as empty strings during comparison.
 
-For example, `usecases/physics/optics/cover.png`, `packages/optics/session.science`, and `introductions/zh/optics.md` may belong to one entry. Root-level files may use their filenames directly as paths. `usecases/` is simply how the existing cases are organized.
+For example, the `Data Science` catalog may contain `Data Science/covers/cover.png`, `Data Science/packages/session.science`, and `Data Science/docs/zh/intro.md` in one entry. Unclassified root-level files may use their filenames directly as paths. `usecases/` is simply how the existing unclassified cases are organized.
 
 ## Sources and checks
 

@@ -1,7 +1,11 @@
 # Adding and updating cases
 
-- The root `manifest.json` is an array. Add exactly one entry for each new case, containing `title`, a unique kebab-case `name`, `cover`, `case`, and `introduction`. Do not change the schema to accommodate missing data.
-- `title` is the display title; `name` is the stable identifier and S3 prefix. Neither has to match the directory name. Locate resources by their individual `path` values. Arbitrarily nested category directories are allowed; neither a `usecases/` prefix nor a shared directory for a case's resources is required.
+- The root `manifest.json` is an array. Add exactly one entry for each new case, containing `title`, a unique kebab-case `name`, `catalog`, `catalog_name`, `cover`, `case`, and `introduction`. Do not change the schema to accommodate missing data.
+- `title` is the display title; `name` is the stable identifier and S3 prefix. Neither has to match the directory name. Locate resources by their individual `path` values. Classified resources may use arbitrary subdirectories within their catalog; resources need not share a subdirectory. Unclassified resources retain arbitrary safe relative paths.
+- `catalog` and `catalog_name` must both be strings. Two empty strings (`""`) mean unclassified; missing fields, null, whitespace-only values, or filling only one field are invalid. Existing unclassified cases stay under `usecases/` without moving files or changing paths.
+- A nonempty `catalog` is both the display label and a classification directory at the repository root. All three resource paths, including remote resources, must start with the literal `<catalog>/`, not `catalog_name`. Spaces, letter case, and punctuation are allowed, but separators, control characters, `.`, `..`, and drive-letter paths are not. Fully remote cases still need no local directory.
+- Derive `catalog_name` as ASCII kebab-case: split PascalCase/camelCase and acronym word boundaries, lowercase, collapse consecutive non-alphanumeric characters to `-`, and trim leading/trailing `-`. For example, `Data Science`, `DataScience`, and `Data_Science` all become `data-science`. Reject non-ASCII names or an empty conversion and ask the user to rename the catalog; never translate, transliterate, remove accents, or silently drop unsupported characters. Do not supply an identifier that differs from the conversion.
+- Check the entire manifest's catalog mapping. Multiple cases may reuse the same catalog. Different catalogs with the same converted `catalog_name` must produce an error listing both names and the conflicting identifier; never append a number automatically. Case `name` values remain globally unique across catalogs.
 - All three resources must contain the five fields below, including fully remote resources. The cover must be an image, the package a `.science` file, and the introduction a `.md` file.
 
 | Field | Meaning |
@@ -23,7 +27,7 @@ shasum -a 256 'usecases/directory/filename'
 
 # Pre-commit checks
 
-Check fields and types, unique names, resource types, safe paths, filenames, actual sizes, SHA values, and source selection. When moving directories, update only `path`; preserve resource contents and all other metadata. Follow Conventional Commits.
+Check fields and types, unique names, catalog conversions and global collisions, resource types, safe paths, filenames, actual sizes, SHA values, and source selection. Classification migrations update catalog fields and paths; preserve resource contents and all other metadata. Follow Conventional Commits.
 
 Run `python3 -B -m unittest discover -s .github/tests -v`. Run the [validation commands](.github/CHECKING.md#commands) against the target being prepared for submission. The check phase does not download bodies or recompute SHA values; it only checks formatting, remote HEAD responses, sizes, and consistency between Git objects and declarations. Actual SHA verification takes place during publication preparation.
 

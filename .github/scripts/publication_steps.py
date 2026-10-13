@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import time
 
+from check_structure import catalog_errors
+
 
 def encoded(value):
     return json.dumps(value, ensure_ascii=True, indent=2) + '\n'
@@ -22,11 +24,24 @@ def build_steps(old, new, target_text):
     current = copy.deepcopy(old)
     previous = {entry['name']: entry for entry in old}
     steps = []
+    pending = []
+    checkpoint = copy.deepcopy(old)
 
     def append(operation, name=None, before=None, after=None):
+        nonlocal checkpoint
+        pending.append(name)
+        # A shared catalog rename can collide until its last case is updated/removed.
+        if catalog_errors(current, legacy=True):
+            return
+        if len(pending) > 1:
+            operation, name = 'UPDATE_CATALOG', None
+            before = [entry for entry in checkpoint if entry['name'] in pending]
+            after = [entry for entry in current if entry['name'] in pending]
         steps.append({'id': len(steps) + 1, 'operation': operation, 'name': name,
                       'before': copy.deepcopy(before), 'after': copy.deepcopy(after),
                       'manifest': encoded(current), 'files': [], 'packages': []})
+        checkpoint = copy.deepcopy(current)
+        pending.clear()
 
     # Reverse insertion retains the repository's relative order within the new head group.
     for entry in reversed([entry for entry in new if entry['name'] not in previous]):
@@ -48,6 +63,8 @@ def build_steps(old, new, target_text):
         current = copy.deepcopy(new)
         append('REORDER', before=before, after=[entry['name'] for entry in new])
     append('FINAL_SYNC')
+    if pending:
+        raise ValueError('Cannot build publication checkpoints with invalid catalogs')
     steps[-1]['manifest'] = target_text  # Preserve the fixed commit's bytes, even on a no-op run.
     return steps
 
@@ -58,10 +75,12 @@ def group_files(plan):
         # Rebuild execution lists exclusively from the validated plan inventory.
         step['files'] = []
         step['packages'] = []
-        if step['operation'] in ('ADD_CASE', 'UPDATE_CASE'):
+        if step['operation'] in ('ADD_CASE', 'UPDATE_CASE', 'UPDATE_CATALOG'):
+            names = ({entry['name'] for entry in step['after']} if step['operation'] == 'UPDATE_CATALOG'
+                     else {step['name']})
             step['files'] = [item for item in plan['files']
-                             if item['key'].startswith(step['name'] + '/')]
-            step['packages'] = [item for item in plan['packages'] if item['name'] == step['name']]
+                             if item['key'].split('/', 1)[0] in names]
+            step['packages'] = [item for item in plan['packages'] if item['name'] in names]
     return plan
 
 

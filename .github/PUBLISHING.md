@@ -4,12 +4,13 @@ Publication reads its baseline from `manifest.json` in the target S3 location an
 
 ## Difference rules
 
-Index updates and resource uploads are evaluated separately. Historical S3 indexes support legacy root-level paths and compare missing cover and introduction `release_url` fields as `""`. Legacy entries without an introduction are also accepted when reading the old index so they can be upgraded. New indexes must follow [CHECKING.md](CHECKING.md). SHA comparisons ignore hexadecimal letter case.
+Index updates and resource uploads are evaluated separately. Historical S3 indexes support legacy root-level paths and compare missing cover and introduction `release_url` fields as `""`. Legacy entries without an introduction or without both `catalog` and `catalog_name` are also accepted when reading the old index so they can be upgraded. If either classification field is present, both must satisfy the string, conversion, path, and global collision rules; a partially populated classification is invalid. New indexes must follow [CHECKING.md](CHECKING.md). SHA comparisons ignore hexadecimal letter case.
 
 | Change | Publication behavior |
 | --- | --- |
 | `path` only | Validate the new source path and update the index; do not upload, extract, or delete resources |
 | `title` only | Update the index |
+| `catalog` / `catalog_name`, optionally with `path` changes | Validate classification and paths, then update the index; do not upload, extract, or delete resources |
 | Add `release_url: ""` | Update the index; this is not a source change |
 | URL changes from empty to nonempty, to another URL, or from nonempty to empty | Force preparation and upload of the corresponding resource, overriding deduplication |
 | `sha256`, `bytes`, or `file_name` | Add the corresponding resource to the candidate list |
@@ -27,7 +28,7 @@ S3 keys always derive from `name` and `file_name`, not the repository `path`:
 <AWS_TARGET_FOLDER>/manifest.json
 ```
 
-Source files are located only through each resource's declared repository-relative `path`. Category directories, arbitrary depth, and separate locations for all three resources are supported; a `usecases/` prefix is not required. Local files and all parent directories must still pass safety checks. Category or path changes update only the index and do not change S3 keys.
+Source files are located only through each resource's declared repository-relative `path`. Classified resources use a `<catalog>/` prefix with arbitrary depth and separate subdirectories beneath it; unclassified resources retain arbitrary safe paths and do not require a `usecases/` prefix. Local files and all parent directories must still pass safety checks. Category or path changes update only the index and do not change S3 keys.
 
 ## Candidates and deduplication
 
@@ -49,7 +50,9 @@ Extraction rejects path traversal, absolute paths, symbolic links, hard links, s
 
 ## Checkpoints and writes
 
-Each added or updated case commits its step's manifest only after completing its own resources. The sequence is:
+Normally, each added or updated case commits its step's manifest only after completing its own resources. If a shared catalog rename or case replacement would create a catalog collision in an intermediate index, combine dependent consecutive operations into an `UPDATE_CATALOG` checkpoint. Commit only once the complete mapping is valid; the checkpoint's before/after values list the affected cases. All selected group resources must finish before the index is committed, so failures retain a valid baseline for a fresh plan. This does not make multi-resource writes atomic.
+
+The sequence is:
 
 1. Confirm that the S3 baseline has not changed. If the package is selected, clear only `<name>/extracted/`.
 2. Upload the case's selected resources and extracted files. Write `sha256` metadata computed from the actual uploaded bytes, then verify the size and metadata with HEAD.
@@ -58,6 +61,8 @@ Each added or updated case commits its step's manifest only after completing its
 5. Finally, `FINAL_SYNC` writes the manifest's original bytes from the fixed commit as a separate step, reads it back, and invalidates only the manifest's CDN path.
 
 Steps that upload resources invalidate the manifest and the case's `<name>/*` path. Steps without resource uploads, including `FINAL_SYNC`, invalidate only the manifest. Every step still waits for invalidation to finish; the entire publication prefix is no longer invalidated.
+
+`UPDATE_CATALOG` processes resources one case at a time: clear that case's extracted prefix only if its package is selected, then upload and verify all of its selected originals and extracted files before starting the next case. A failure leaves later cases' resources untouched. Removed cases' resources are retained, and the group manifest is committed only after every case succeeds. In name order, invalidate only cases with actual uploads; each request includes the manifest and that case's `<name>/*` and waits for completion. Cases in the group without uploads do not have their resource caches invalidated. Classification/path-only groups invalidate only the index. Operations without catalog collisions retain individual case checkpoints.
 
 Removal, reordering, and index-only steps do not clean up resources. The trailing `/` in the cleanup prefix prevents accidental deletion of similarly named prefixes. Conditional conflicts fail without falling back to unconditional writes. Only an ambiguous transport failure permits a read-back check to determine whether PUT completed. ETag is used for version conditions, not as a content SHA.
 
@@ -71,6 +76,8 @@ Step status is `waiting`, `uploading`, `completed`, or `failed`, with separate r
 
 For example, if the first two cases complete and the third uploads but fails to write the index, a new run reads the checkpoint containing the first two cases and processes only the remaining differences. The third case's cover and introduction may be deduplicated using target metadata, but source changes still force upload, and its package is prepared and extracted again. If the index was committed but CDN invalidation failed, the new run's `FINAL_SYNC` only retries invalidation of the manifest; it does not automatically invalidate resource caches for cases that were already committed. Use the failed run's CDN path logs to issue a separate invalidation for each affected case and confirm completion. If the request was accepted but waiting failed, first check the actual status of that invalidation request.
 
+Catalog groups stop invalidating on the first failure, so remaining cases may have no CDN path log even though their resources were uploaded and the index was committed. Obtain all uploaded case prefixes from the failed group's `steps/*/files.json`, check completed invalidation requests, and individually complete the missing case invalidations.
+
 After fixing the cause, start a new `workflow_dispatch` on main; do not use native Re-run jobs. The scripts and Action reject `GITHUB_RUN_ATTEMPT != 1`. Each new run uses a newly fixed SHA, fresh staging, and a fresh S3 baseline. Never reuse an old plan whose extraction has completed to retry extraction. The concurrency queue does not guarantee commit ancestry order; if an older target is published from the queue, dispatch the current main again afterward.
 
 There is no proactive object repair or garbage collection. Unchanged declarations will not reveal manually deleted objects, and reverting declarations does not guarantee repair of object changes left by a failed batch. Arrange explicit resource repair separately when needed.
@@ -78,6 +85,8 @@ There is no proactive object repair or garbage collection. Unchanged declaration
 ## usecases migration acceptance
 
 Move directories as a whole, preserving resource contents, filenames, sizes, SHA values, names, and titles. Change only `path` and add empty URL fields. Use the pre-migration index as the fake S3 baseline and prove that the resource candidate/upload, package extraction, and S3 deletion lists are all empty. After the new manifest is written, its read-back must match, and existing resource keys and bytes must remain unchanged.
+
+The classification upgrade only adds `catalog: ""` and `catalog_name: ""` to existing cases, preserving `usecases/`, every resource path, and resource metadata. Historical S3 indexes may omit both fields. This upgrade also changes only the index and selects no resource operations.
 
 ## Local validation
 

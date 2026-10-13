@@ -104,7 +104,8 @@ class StructureTests(unittest.TestCase):
             if key != "case" or not remote:
                 self.write(path, content)
         resources["case"]["release_url"] = self.url if remote else ""
-        entry = {"title": title, "name": CHECKER["kebab_case"](title), **resources}
+        entry = {"title": title, "name": CHECKER["kebab_case"](title),
+                 "catalog": "", "catalog_name": "", **resources}
         self.manifest([entry])
         return entry
 

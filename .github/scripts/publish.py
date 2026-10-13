@@ -14,7 +14,7 @@ import sys
 import tempfile
 from urllib.parse import quote, urlsplit
 
-from check_structure import read_json, schema_errors, source_errors, selected_cases
+from check_structure import catalog_errors, read_json, schema_errors, source_errors, selected_cases
 from manifest_diff import changed_entries, git
 from publication_steps import (build_steps, group_files, write_artifacts, print_plan,
                                Reporter, digest)
@@ -37,6 +37,9 @@ def read_manifest(text, source, legacy=True):
         if entry['name'] in names:
             raise ValueError(source + ': Duplicate case name: ' + entry['name'])
         names.add(entry['name'])
+    errors = catalog_errors(entries, legacy=legacy)
+    if errors:
+        raise ValueError(source + ': ' + '; '.join(errors))
     return entries
 
 
@@ -334,19 +337,25 @@ def apply(root, plan, s3, output=None):
                 if s3.read_manifest() != baseline:
                     raise ValueError('S3 manifest changed since preparation; dispatch a fresh run')
                 phase = 'files'
-                for package in step['packages']:
-                    reporter.event(step, 'clear_extracted', 'uploading', name=package['name'])
-                    s3.clear_extracted(package['name'])
-                    reporter.event(step, 'clear_extracted', 'completed', name=package['name'])
+                # Finish one case before clearing the next, even when originals and extracted files are interleaved.
+                case_files = {}
                 for item, file_state in zip(step['files'], state['files']):
-                    started = time.monotonic()
-                    file_state['status'] = 'uploading'
-                    reporter.event(step, 'file', 'uploading', **item)
-                    s3.upload(root / item['path'], item['key'])
-                    s3.verify_upload(item['key'], item['bytes'], item['sha256'])
-                    file_state['status'] = 'completed'
-                    reporter.event(step, 'file', 'completed', key=item['key'],
-                                   elapsed_seconds=round(time.monotonic() - started, 3))
+                    case_files.setdefault(item['key'].split('/', 1)[0], []).append((item, file_state))
+                package_names = {package['name'] for package in step['packages']}
+                for name, files in case_files.items():
+                    if name in package_names:
+                        reporter.event(step, 'clear_extracted', 'uploading', name=name)
+                        s3.clear_extracted(name)
+                        reporter.event(step, 'clear_extracted', 'completed', name=name)
+                    for item, file_state in files:
+                        started = time.monotonic()
+                        file_state['status'] = 'uploading'
+                        reporter.event(step, 'file', 'uploading', **item)
+                        s3.upload(root / item['path'], item['key'])
+                        s3.verify_upload(item['key'], item['bytes'], item['sha256'])
+                        file_state['status'] = 'completed'
+                        reporter.event(step, 'file', 'completed', key=item['key'],
+                                       elapsed_seconds=round(time.monotonic() - started, 3))
                 phase = 'manifest'
                 reporter.event(step, phase, 'uploading', sha256=digest(step['manifest']))
                 directory = output / 'steps' / ('%03d-%s' % (step['id'], step['name'] or step['operation'].lower()))
@@ -375,7 +384,10 @@ def apply(root, plan, s3, output=None):
                 phase = 'cdn'
                 state['cdn'] = 'uploading'
                 reporter.event(step, phase, 'uploading')
-                s3.refresh_cdn(step['name'] if step['files'] else None)
+                # Catalog checkpoints may upload several cases; refresh only those prefixes.
+                changed_names = sorted({item['key'].split('/', 1)[0] for item in step['files']})
+                for name in changed_names or [None]:
+                    s3.refresh_cdn(name)
                 state['cdn'] = 'completed'
                 state['status'] = 'completed'
                 reporter.event(step, 'step', 'completed')

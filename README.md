@@ -2,10 +2,12 @@
 
 This repository collects completed Open-Science session exports, covers, and introductions. The root `manifest.json` serves as the case index.
 
-Existing cases live under `usecases/`. Future cases may use nested category directories or other locations. Validation and publication locate each resource directly through its `path`; no directory prefix, depth, or shared directory is required for the three resources. Each entry contains a `title`, a unique kebab-case `name`, and three resources: `cover`, `case`, and `introduction`. Every resource provides `file_name`, `path`, `bytes`, `sha256`, and `release_url`. An empty URL selects a local file; a nonempty URL selects a remote resource. Fully remote entries do not need local directories but must still retain valid paths.
+Existing cases stay under `usecases/`, with both `catalog` and `catalog_name` set to `""` (unclassified); existing directories and paths are unchanged. Each entry contains a `title`, a unique kebab-case `name`, the two classification strings, and three resources: `cover`, `case`, and `introduction`. Every resource provides `file_name`, `path`, `bytes`, `sha256`, and `release_url`. An empty URL selects a local file; a nonempty URL selects a remote resource. Fully remote entries do not need local directories but must still retain valid paths.
+
+A nonempty `catalog` is the display label and a directory at the repository root. All resource paths start with `<catalog>/` and may use independent subdirectories beneath it. Derive `catalog_name` as ASCII kebab-case, for example `Data Science` becomes `data-science`. Non-ASCII names, empty conversions, and collisions between different catalogs produce errors for the user to resolve. Multiple cases may share a catalog. Both classification fields must be empty or both populated.
 
 ```text
-usecases/physics/example/
+Data Science/example/
   cover.png
   session.science
   introduction.md
