@@ -6,12 +6,16 @@ from http.server import ThreadingHTTPServer
 import io
 import itertools
 import json
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 import threading
 from unittest.mock import patch
 
 from test_extract_science import DownloadHandler, package_bytes
-from test_publish import GitFixture, publisher
+from test_publish import GitFixture, SCRIPTS, publisher
 from test_resource_sources import Store
 import extract_science
 
@@ -35,7 +39,7 @@ class RemoteResourcesTests(GitFixture):
 
     def set_source(self, kind, remote, suffix=''):
         resource = self.entry[kind]
-        body = self.package if kind == 'case' else b'original'
+        body = self.package if kind == 'case' else {'cover': b'cover-v1', 'introduction': b'intro-v1'}[kind]
         path = self.root / resource['path']
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(body)
@@ -149,3 +153,75 @@ class RemoteResourcesTests(GitFixture):
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 publisher.apply(self.root, altered, store)
             self.assertEqual(store.writes, [])
+
+    def check_classified_manifest(self, plan):
+        result = subprocess.run(
+            [sys.executable, '-B', str(SCRIPTS / 'check_structure.py'), 'manifest'],
+            cwd=self.root, env={**os.environ, 'CASES_JSON': json.dumps(plan['cases'])},
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def classify_resources(self):
+        for kind, directory in zip(publisher.KINDS, ('分类/物理/图片', 'packages/deep/session', 'docs/zh')):
+            resource = self.entry[kind]
+            old = self.root / resource['path']
+            resource['path'] = directory + '/' + resource['file_name']
+            if old.exists():
+                old.unlink()
+        shutil.rmtree(self.root / 'usecases')
+        self.entry['title'] = 'Display title unrelated to any directory'
+
+    def test_classified_eight_combinations_check_head_then_prepare_and_publish(self):
+        self.classify_resources()
+        for flags in itertools.product((False, True), repeat=3):
+            with self.subTest(flags=flags), contextlib.redirect_stdout(io.StringIO()):
+                self.http.requests = []; self.http.head_requests = []
+                for kind, remote in zip(publisher.KINDS, flags):
+                    self.set_source(kind, remote)
+                    if remote:
+                        # Remote resources do not depend on an unrelated local resource's parent.
+                        shutil.rmtree((self.root / self.entry[kind]['path']).parent)
+                self.write_manifest(); after = self.commit()
+                plan = publisher.prepare(self.root, None, after)
+                self.check_classified_manifest(plan)
+                expected = ['/' + kind + Path(self.entry[kind]['file_name']).suffix
+                            for kind, remote in zip(publisher.KINDS, flags) if remote]
+                self.assertCountEqual(self.http.head_requests, expected)
+                self.assertEqual(self.http.requests, [])
+                store = Store(None); store.clears = []
+                store.clear_extracted = store.clears.append
+                plan = self.staged(plan, store)
+                plan = extract_science.expand_plan(self.root, plan, self.root / 'staging')
+                publisher.apply(self.root, plan, store)
+                self.assertCountEqual(self.http.requests, expected)
+                self.assertEqual(store.clears, ['a-case'])
+                self.assertEqual(store.manifest, (self.root / 'manifest.json').read_text())
+                for kind in publisher.KINDS:
+                    key = 'a-case/' + self.entry[kind]['file_name']
+                    self.assertEqual(store.objects[key]['Metadata']['sha256'], self.entry[kind]['sha256'])
+
+    def test_remote_path_only_reclassification_checks_head_without_downloading_or_uploading(self):
+        self.classify_resources()
+        for kind in publisher.KINDS:
+            self.set_source(kind, True)
+        self.write_manifest(); self.commit()
+        for kind in publisher.KINDS:
+            with self.subTest(kind=kind), contextlib.redirect_stdout(io.StringIO()):
+                old = json.dumps(self.entries)
+                self.entry[kind]['path'] = 'remote/新分类/' + kind + '/' + self.entry[kind]['file_name']
+                self.write_manifest(); after = self.commit()
+                plan = publisher.prepare(self.root, old, after)
+                self.http.head_requests = []
+                self.check_classified_manifest(plan)
+                self.assertCountEqual(self.http.head_requests, ['/cover.png', '/case.science', '/introduction.md'])
+                self.assertEqual(plan['candidates'], [])
+                self.assertEqual(plan['packages'], [])
+                store = Store(old)
+                store.objects = {'a-case/extracted/session.json': b'existing replay'}
+                store.clear_extracted = lambda name: self.fail('path-only move cleared a package')
+                publisher.apply(self.root, plan, store)
+                self.assertEqual(store.objects, {'a-case/extracted/session.json': b'existing replay'})
+                self.assertEqual(store.heads, [])
+                self.assertEqual(set(store.writes), {'manifest.json'})
+                self.assertEqual(self.http.requests, [])
+                self.assertEqual(json.loads(store.manifest), self.entries)
