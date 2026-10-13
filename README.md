@@ -1,22 +1,22 @@
-# AIPOCH Open-Science 案例
+# AIPOCH Open-Science Cases
 
-本仓库收集完成的 Open-Science 会话导出、封面和介绍，根 `manifest.json` 是案例索引。
+This repository collects completed Open-Science session exports, covers, and introductions. The root `manifest.json` serves as the case index.
 
-现有案例放在 `usecases/`，后续可按分类扩展目录层级，也可使用其他目录。校验和发布直接按各资源的 `path` 定位，不强制目录前缀、层级或三个资源共用目录。每个条目包含 `title`、唯一 kebab-case `name`，以及 `cover`、`case`、`introduction` 三种资源；每种资源都提供 `file_name`、`path`、`bytes`、`sha256`、`release_url`。URL 为空时采用本地文件，非空时采用远程资源；全远程条目可不创建本地目录，但仍保留规范 path。
+Existing cases live under `usecases/`. Future cases may use nested category directories or other locations. Validation and publication locate each resource directly through its `path`; no directory prefix, depth, or shared directory is required for the three resources. Each entry contains a `title`, a unique kebab-case `name`, and three resources: `cover`, `case`, and `introduction`. Every resource provides `file_name`, `path`, `bytes`, `sha256`, and `release_url`. An empty URL selects a local file; a nonempty URL selects a remote resource. Fully remote entries do not need local directories but must still retain valid paths.
 
 ```text
-usecases/物理/示例目录/
+usecases/physics/example/
   cover.png
   session.science
   introduction.md
 ```
 
-目录、标题与 name 可独立命名。S3 始终使用 `<name>/<file_name>`，包解压内容位于 `<name>/extracted/`，目录迁移不改变 S3 资源键。
+Directories, titles, and names can be chosen independently. S3 always uses `<name>/<file_name>`, with extracted package contents under `<name>/extracted/`. Moving directories does not change S3 resource keys.
 
-原始 `.science` 会话内容保持不变。案例中标明的模拟演示和未解决结论仍以源会话为准，收录不代表模型的一般性能保证。
+Original `.science` session contents remain unchanged. Simulation demonstrations and unresolved conclusions noted in a case remain subject to the source session; inclusion does not guarantee general model performance.
 
-- [新增和修改案例](AGENTS.md)
-- [校验规则与命令](.github/CHECKING.md)
-- [发布、去重与恢复](.github/PUBLISHING.md)
+- [Adding and updating cases](AGENTS.md)
+- [Validation rules and commands](.github/CHECKING.md)
+- [Publication, deduplication, and recovery](.github/PUBLISHING.md)
 
-本地测试：`python3 -B -m unittest discover -s .github/tests -v`。测试使用临时数据及 fake S3，不执行真实发布。
+Local tests: `python3 -B -m unittest discover -s .github/tests -v`. Tests use temporary data and fake S3; they do not perform live publication.
