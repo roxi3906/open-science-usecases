@@ -1,26 +1,26 @@
-# Case 发布
+# Case Publication
 
-发布从目标 S3 的 `manifest.json` 读取基线，对比固定 checkout 的 manifest。Git push 范围不作为发布基线。只有明确的 `NoSuchKey` 表示首次发布；权限、网络、无效 JSON 或不合法索引都使准备失败。
+Publication reads its baseline from `manifest.json` in the target S3 location and compares it with the manifest in the fixed checkout. The Git push range is not the publication baseline. Only an explicit `NoSuchKey` indicates the first publication; permission errors, network failures, invalid JSON, or an invalid index cause preparation to fail.
 
-## 差异规则
+## Difference rules
 
-索引更新与资源上传分别判断。历史 S3 索引支持旧根目录路径，封面及介绍缺失 `release_url` 时按 `""` 比较；兼容读取旧索引缺少 introduction、同时缺少 catalog/catalog_name 的条目，以便补齐升级。已包含分类字段的旧条目仍须满足成对字符串、转换、路径及全局冲突规则，不能仅缺少其中一个字段。新索引须遵循 [CHECKING.md](CHECKING.md)。SHA 比较忽略十六进制字母大小写。
+Index updates and resource uploads are evaluated separately. Historical S3 indexes support legacy root-level paths and compare missing cover and introduction `release_url` fields as `""`. Legacy entries without an introduction or without both `catalog` and `catalog_name` are also accepted when reading the old index so they can be upgraded. If either classification field is present, both must satisfy the string, conversion, path, and global collision rules; a partially populated classification is invalid. New indexes must follow [CHECKING.md](CHECKING.md). SHA comparisons ignore hexadecimal letter case.
 
-| 变化 | 发布行为 |
+| Change | Publication behavior |
 | --- | --- |
-| 仅 `path` | 校验新来源路径，更新索引；不上传、解压或删除资源 |
-| 仅 `title` | 更新索引 |
-| 仅 `catalog` / `catalog_name`，或同时调整 `path` | 校验分类及路径，更新索引；不上传、解压或删除资源 |
-| 补充 `release_url: ""` | 更新索引，不算来源变化 |
-| URL 空变非空、换 URL、非空变空 | 对应资源强制准备和上传，优先于去重 |
-| `sha256`、`bytes`、`file_name` | 对应资源进入候选清单 |
-| `name` | 使用新 name 查找 S3 索引记录；有记录则增量比较，无记录则视为新增 |
-| 删除或排序 | 更新索引，保留已有资源对象 |
-| 无相关资源声明变化 | 不 HEAD 扫描或修复对象；仍执行 FINAL_SYNC |
+| `path` only | Validate the new source path and update the index; do not upload, extract, or delete resources |
+| `title` only | Update the index |
+| `catalog` / `catalog_name`, optionally with `path` changes | Validate classification and paths, then update the index; do not upload, extract, or delete resources |
+| Add `release_url: ""` | Update the index; this is not a source change |
+| URL changes from empty to nonempty, to another URL, or from nonempty to empty | Force preparation and upload of the corresponding resource, overriding deduplication |
+| `sha256`, `bytes`, or `file_name` | Add the corresponding resource to the candidate list |
+| `name` | Look up the new name in the S3 index; compare incrementally if an entry exists, otherwise treat it as new |
+| Removal or reordering | Update the index and retain existing resource objects |
+| No relevant resource declaration changes | Do not scan objects with HEAD or repair them; still run FINAL_SYNC |
 
-新 name 只有残留对象时继续正常准备：封面和介绍按候选去重规则验证目标，包仍准备、上传和解压。不得因前缀存在就跳过。旧 name 移出索引后旧对象保留。
+If a new name has only leftover objects, continue normal preparation: validate target covers and introductions according to candidate deduplication rules, and still prepare, upload, and extract the package. Do not skip a case merely because its prefix exists. Objects under an old name remain after that name leaves the index.
 
-S3 键始终由 `name` 和 `file_name` 决定，不采用仓库 `path`：
+S3 keys always derive from `name` and `file_name`, not the repository `path`:
 
 ```text
 <AWS_TARGET_FOLDER>/<name>/<file_name>
@@ -28,70 +28,70 @@ S3 键始终由 `name` 和 `file_name` 决定，不采用仓库 `path`：
 <AWS_TARGET_FOLDER>/manifest.json
 ```
 
-源文件只按各资源声明的仓库相对 `path` 定位。有分类时使用 `<catalog>/` 前缀，其下支持任意层级及三个资源分开放置；无分类时保留任意安全路径，不要求 `usecases/` 前缀。本地文件及各级父目录仍需通过安全检查。分类或路径调整仅更新索引，不改变 S3 键。
+Source files are located only through each resource's declared repository-relative `path`. Classified resources use a `<catalog>/` prefix with arbitrary depth and separate subdirectories beneath it; unclassified resources retain arbitrary safe paths and do not require a `usecases/` prefix. Local files and all parent directories must still pass safety checks. Category or path changes update only the index and do not change S3 keys.
 
-## 候选与去重
+## Candidates and deduplication
 
-仅候选清单内、未强制上传的封面和介绍执行目标 S3 `HeadObject`。目标 `Metadata.sha256` 和 `ContentLength` 都匹配才跳过上传。缺对象、缺 metadata、SHA 或大小不匹配都准备并上传。403、网络和其他错误失败，不冒充缺对象；HeadObject 的明确 404/NoSuchKey/NotFound 才表示缺对象。
+Only candidate covers and introductions that are not marked for forced upload receive a target S3 `HeadObject` check. Upload is skipped only when both the target `Metadata.sha256` and `ContentLength` match. Missing objects, missing metadata, or SHA or size mismatches trigger preparation and upload. A 403, network failure, or other error causes failure and must not be treated as a missing object; only an explicit 404/NoSuchKey/NotFound from HeadObject indicates absence.
 
-来源变化对三类资源一致：即使目标 metadata 相同也强制上传；`.science` 同时选择解压和替换。包不进行 metadata 去重。源下载 URL 的 metadata 不作为目标 S3 证据。
+Source changes apply consistently to all three resource types: upload is forced even when target metadata matches. For `.science` packages, extraction and replacement are also selected. Packages do not use metadata deduplication. Metadata from the source download URL is not evidence about the target S3 object.
 
-计划保存候选原因、`force_upload`、HEAD 证据、上传或跳过决定及原因。执行前再次 HEAD 所有跳过项；若此时不匹配，整个批次在写入前失败，应重新生成计划。
+The plan records candidate reasons, `force_upload`, HEAD evidence, upload or skip decisions, and their reasons. Before execution, HEAD is repeated for every skipped item. If any item no longer matches, the entire batch fails before writes begin and the plan must be regenerated.
 
-## 准备与解压
+## Preparation and extraction
 
-Action 分别控制条目校验、资源准备、包解压、manifest 发布。无资源上传时仍发布所需索引并执行 `FINAL_SYNC`。
+The Action controls entry validation, resource preparation, package extraction, and manifest publication separately. Even when no resources are uploaded, it still publishes the required index and runs `FINAL_SYNC`.
 
-本地来源读取固定 checkout 中的 `path`，复制到本次运行的临时目录；远程来源下载到该目录。所有选中文件都必须与声明的实际大小和 SHA 一致。所有文件准备成功、所有选中包解压成功后才允许任何 S3 写入。包上传和解压复用同一暂存文件，远程包只下载一次。封面、介绍、标题或路径变化不会选择包解压。
+Local sources are read from their `path` in the fixed checkout and copied to a temporary directory for the current run; remote sources are downloaded into that directory. Every selected file must match its declared actual size and SHA. No S3 writes are allowed until all files have been prepared successfully and all selected packages have been extracted successfully. Package upload and extraction reuse the same staged file, so a remote package is downloaded only once. Cover, introduction, title, or path changes do not select package extraction.
 
-`.science` 是 gzip tar；解压保留 `session.json`、`records.json`、包内 `manifest.json`、`README.md` 原始字节。inventory 中资源通过 `storageKey` 恢复至 `extracted/` 对应路径，支持 `content-dedupe`；不发布中间 `objects/` 目录，不重写 `$DATA/` 历史数据。客户端需把 `$DATA/<storageKey>` 解析为对应 extracted URL，并对各路径段编码。
+A `.science` file is a gzipped tar archive. Extraction preserves the original bytes of `session.json`, `records.json`, the package's `manifest.json`, and `README.md`. Resources in the inventory are restored to their corresponding paths under `extracted/` using `storageKey`, with support for `content-dedupe`. The intermediate `objects/` directory is not published, and historical `$DATA/` data is not rewritten. Clients must resolve `$DATA/<storageKey>` to the corresponding extracted URL and encode each path segment.
 
-解压拒绝路径穿越、绝对路径、符号链接、硬链接、特殊文件、重复或跨平台冲突路径、不支持的格式/特性、缺失或未声明文件、错误大小/SHA、损坏或截断 gzip。执行前再次验证暂存内容，并从已验证包审计完整解压上传清单（不再次落盘解压），拒绝缺项、额外文件或改写 metadata。固定提交重新推导候选和 checkpoint，拒绝遗漏强制上传项、伪造跳过项或篡改计划。
+Extraction rejects path traversal, absolute paths, symbolic links, hard links, special files, duplicate or cross-platform conflicting paths, unsupported formats or features, missing or undeclared files, incorrect sizes or SHA values, and corrupt or truncated gzip data. Before execution, staged contents are verified again and the complete extraction upload inventory is audited against the verified package without extracting it to disk again. Missing items, extra files, and altered metadata are rejected. Candidates and checkpoints are derived again from the fixed commit, rejecting omitted forced uploads, fabricated skips, or tampered plans.
 
-## checkpoint 与写入
+## Checkpoints and writes
 
-通常每个新增/更新 case 完成自身资源后才提交该步 manifest。若分类整体改名或新旧案例替换会让中间索引出现分类撞名，则合并相关连续操作为 `UPDATE_CATALOG`，直到完整分类映射合法后才提交一个 checkpoint；其 before/after 记录涉及的案例列表。组内所有资源完成后才提交索引，任一步失败均保留上一个合法基线，便于重新生成计划。它不使多资源上传原子化。
+Normally, each added or updated case commits its step's manifest only after completing its own resources. If a shared catalog rename or case replacement would create a catalog collision in an intermediate index, combine dependent consecutive operations into an `UPDATE_CATALOG` checkpoint. Commit only once the complete mapping is valid; the checkpoint's before/after values list the affected cases. All selected group resources must finish before the index is committed, so failures retain a valid baseline for a fresh plan. This does not make multi-resource writes atomic.
 
-顺序为：
+The sequence is:
 
-1. 确认 S3 基线未变化；若包被选中，清理且仅清理 `<name>/extracted/`。
-2. 上传本 case 的选中资源和解压文件，写入从实际上传字节计算的 `sha256` metadata，再 HEAD 验证大小和 metadata。
-3. 条件写入根 manifest：已有对象使用 `If-Match` ETag，首次使用 `If-None-Match: *`。
-4. 回读验证 manifest 原始文本一致，等待本步 CDN 刷新完成，然后进入下一步。
-5. 最后 `FINAL_SYNC` 单独写入固定提交的 manifest 原始字节，回读并仅刷新 manifest 的 CDN 路径。
+1. Confirm that the S3 baseline has not changed. If the package is selected, clear only `<name>/extracted/`.
+2. Upload the case's selected resources and extracted files. Write `sha256` metadata computed from the actual uploaded bytes, then verify the size and metadata with HEAD.
+3. Write the root manifest conditionally: use the `If-Match` ETag for an existing object, or `If-None-Match: *` for the first write.
+4. Read back the manifest and verify that its raw text matches. Wait for this step's CDN invalidation to finish before proceeding to the next step.
+5. Finally, `FINAL_SYNC` writes the manifest's original bytes from the fixed commit as a separate step, reads it back, and invalidates only the manifest's CDN path.
 
-有资源上传的步骤刷新 manifest 和该 case 的 `<name>/*`；没有资源上传的步骤（包括 `FINAL_SYNC`）只刷新 manifest。每步仍等待刷新完成，不再对整个发布前缀执行失效。
+Steps that upload resources invalidate the manifest and the case's `<name>/*` path. Steps without resource uploads, including `FINAL_SYNC`, invalidate only the manifest. Every step still waits for invalidation to finish; the entire publication prefix is no longer invalidated.
 
-`UPDATE_CATALOG` 只清理组内需要重新解压的包，保留被删除案例的资源；按名称依次刷新实际有资源上传的案例，每次包含 manifest 和该案例的 `<name>/*` 并等待完成，组内未上传资源的案例不刷新资源缓存。纯分类/路径变更仅刷新索引。不涉及分类冲突的操作仍按单个 case 提交。
+`UPDATE_CATALOG` clears only packages selected for extraction and retains removed cases' resources. In name order, invalidate only cases with actual uploads; each request includes the manifest and that case's `<name>/*` and waits for completion. Cases in the group without uploads do not have their resource caches invalidated. Classification/path-only groups invalidate only the index. Operations without catalog collisions retain individual case checkpoints.
 
-删除、排序及仅索引变化步骤没有资源清理。清理前缀的末尾 `/` 防止误删相似名称。条件冲突失败且不降级无条件写；只有不确定的传输失败允许通过回读确认 PUT 是否已完成。ETag 用于版本条件，不是内容 SHA。
+Removal, reordering, and index-only steps do not clean up resources. The trailing `/` in the cleanup prefix prevents accidental deletion of similarly named prefixes. Conditional conflicts fail without falling back to unconditional writes. Only an ambiguous transport failure permits a read-back check to determine whether PUT completed. ETag is used for version conditions, not as a content SHA.
 
-串行 workflow 锁覆盖读取基线到最终发布。锁不使多对象写入原子化：包替换期间可能短暂缺文件；失败前成功上传的对象仍然存在。所有发布者都必须遵守同一锁。
+The serial workflow lock covers the interval from reading the baseline through final publication. It does not make writes across multiple objects atomic: files may be briefly absent during package replacement, and objects uploaded successfully before a failure remain in place. All publishers must honor the same lock.
 
-## 证据、失败与恢复
+## Evidence, failures, and recovery
 
-`publication-plan.json` 及同名目录保存基线、候选、决定、完整计划、各步 manifest、文件清单、前后条目、`status.json`、`events.jsonl` 和 `summary.md`。Actions 始终保存证据 artifact，保留 14 天，不上传暂存正文。日志也显示去重证据；URL 不应携带凭据。
+`publication-plan.json` and its corresponding directory store the baseline, candidates, decisions, complete plan, per-step manifests, file lists, before-and-after entries, `status.json`, `events.jsonl`, and `summary.md`. Actions always save the evidence artifact for 14 days, without uploading staged bodies. Logs also show deduplication evidence; URLs should not contain credentials.
 
-步骤状态为 `waiting`、`uploading`、`completed` 或 `failed`，分别记录 manifest 是否提交、回读验证和 CDN 状态。任何校验、准备、解压、删除、上传、回读或 CDN 失败立即停止，失败后不补跑 FINAL_SYNC。进程被终止时状态可能停留在 uploading，恢复仍以 S3 为准。
+Step status is `waiting`, `uploading`, `completed`, or `failed`, with separate records for manifest commitment, read-back verification, and CDN status. Any validation, preparation, extraction, deletion, upload, read-back, or CDN failure stops processing immediately. FINAL_SYNC is not run after a failure. If the process is terminated, status may remain `uploading`; recovery still uses S3 as the source of truth.
 
-例如前两个 case 完成、第三个上传后索引写入失败：新运行读取前两个 case 的 checkpoint，只处理未完成的差异。第三个封面/介绍可经目标 metadata 去重，来源切换仍强制上传；包仍重新准备和解压。索引已提交但 CDN 失败时，新运行的 `FINAL_SYNC` 仅补刷新 manifest，不会自动补刷新已提交 case 的资源缓存。应根据失败运行的 CDN 路径日志，单独对受影响的 case 发起失效并确认完成；若请求已被接受但等待失败，先核实该失效请求的实际状态。
+For example, if the first two cases complete and the third uploads but fails to write the index, a new run reads the checkpoint containing the first two cases and processes only the remaining differences. The third case's cover and introduction may be deduplicated using target metadata, but source changes still force upload, and its package is prepared and extracted again. If the index was committed but CDN invalidation failed, the new run's `FINAL_SYNC` only retries invalidation of the manifest; it does not automatically invalidate resource caches for cases that were already committed. Use the failed run's CDN path logs to issue a separate invalidation for each affected case and confirm completion. If the request was accepted but waiting failed, first check the actual status of that invalidation request.
 
-分类组在首次刷新失败后不会继续刷新其余案例，这些案例可能没有 CDN 路径日志。应从失败组的 `steps/*/files.json` 中提取全部实际上传资源的 case 前缀，结合已完成的失效请求状态，逐一补齐未完成的案例刷新。
+Catalog groups stop invalidating on the first failure, so remaining cases may have no CDN path log even though their resources were uploaded and the index was committed. Obtain all uploaded case prefixes from the failed group's `steps/*/files.json`, check completed invalidation requests, and individually complete the missing case invalidations.
 
-修复原因后在 main 发起新的 `workflow_dispatch`，不要使用原生 Re-run jobs；脚本和 Action 拒绝 `GITHUB_RUN_ATTEMPT != 1`。每次新运行使用新固定 SHA、新暂存和新 S3 基线。禁止复用完成解压的旧计划来重试解压。并发队列不保证提交祖先顺序，旧目标排队发布后可再 dispatch 当前 main。
+After fixing the cause, start a new `workflow_dispatch` on main; do not use native Re-run jobs. The scripts and Action reject `GITHUB_RUN_ATTEMPT != 1`. Each new run uses a newly fixed SHA, fresh staging, and a fresh S3 baseline. Never reuse an old plan whose extraction has completed to retry extraction. The concurrency queue does not guarantee commit ancestry order; if an older target is published from the queue, dispatch the current main again afterward.
 
-没有主动对象修复或垃圾回收。声明未变时不会发现手动删除的对象，回退声明也不保证修复失败批次留下的对象变化。需要时单独安排明确的资源修复。
+There is no proactive object repair or garbage collection. Unchanged declarations will not reveal manually deleted objects, and reverting declarations does not guarantee repair of object changes left by a failed batch. Arrange explicit resource repair separately when needed.
 
-## usecases 迁移验收
+## usecases migration acceptance
 
-目录整体迁移，资源内容、文件名、大小、SHA、name 和 title 不变；只修改 `path` 并补充空 URL 字段。以迁移前索引作为 fake S3 基线，必须证明资源候选/上传、包解压和 S3 删除清单均为空，新的 manifest 写入后回读一致，已有资源键及字节保持原状。
+Move directories as a whole, preserving resource contents, filenames, sizes, SHA values, names, and titles. Change only `path` and add empty URL fields. Use the pre-migration index as the fake S3 baseline and prove that the resource candidate/upload, package extraction, and S3 deletion lists are all empty. After the new manifest is written, its read-back must match, and existing resource keys and bytes must remain unchanged.
 
-分类字段升级只为现有案例补充 `catalog: ""` 和 `catalog_name: ""`，保留 `usecases/` 及全部路径和资源 metadata。旧 S3 索引可以同时缺少这两个字段；升级同样只更新索引，不触发资源操作。
+The classification upgrade only adds `catalog: ""` and `catalog_name: ""` to existing cases, preserving `usecases/`, every resource path, and resource metadata. Historical S3 indexes may omit both fields. This upgrade also changes only the index and selects no resource operations.
 
-## 本地验证
+## Local validation
 
 ```sh
 python3 -B -m unittest discover -s .github/tests -v
 ```
 
-测试使用临时 Git、本地 HTTP 和 fake S3，不访问正式 AWS。覆盖 HEAD 无 GET、来源组合/切换、增量候选、metadata 去重、准备完整性、解压安全、计划篡改、清理范围、逐 case 失败恢复和路径迁移的索引写入。真实 Actions 权限、AWS/CDN、线上消费者兼容性仍需合并后另行验证；本地通过不代表真实发布已执行。
+Tests use temporary Git repositories, local HTTP, and fake S3 without accessing production AWS. Coverage includes HEAD without GET, source combinations and switches, incremental candidates, metadata deduplication, preparation integrity, extraction safety, plan tampering, cleanup scope, per-case failure recovery, and index writes for path migrations. Actual Actions permissions, AWS/CDN behavior, and compatibility with production consumers still require separate post-merge verification; passing local tests does not mean live publication has run.

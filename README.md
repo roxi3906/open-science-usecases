@@ -1,24 +1,24 @@
-# AIPOCH Open-Science 案例
+# AIPOCH Open-Science Cases
 
-本仓库收集完成的 Open-Science 会话导出、封面和介绍，根 `manifest.json` 是案例索引。
+This repository collects completed Open-Science session exports, covers, and introductions. The root `manifest.json` serves as the case index.
 
-现有案例放在 `usecases/`，`catalog` 和 `catalog_name` 均为 `""`，表示无分类，原目录和路径保持不变。每个条目包含 `title`、唯一 kebab-case `name`、字符串 `catalog`、字符串 `catalog_name`，以及 `cover`、`case`、`introduction` 三种资源；每种资源都提供 `file_name`、`path`、`bytes`、`sha256`、`release_url`。URL 为空时采用本地文件，非空时采用远程资源；全远程条目可不创建本地目录，但仍保留规范 path。
+Existing cases stay under `usecases/`, with both `catalog` and `catalog_name` set to `""` (unclassified); existing directories and paths are unchanged. Each entry contains a `title`, a unique kebab-case `name`, the two classification strings, and three resources: `cover`, `case`, and `introduction`. Every resource provides `file_name`, `path`, `bytes`, `sha256`, and `release_url`. An empty URL selects a local file; a nonempty URL selects a remote resource. Fully remote entries do not need local directories but must still retain valid paths.
 
-非空 `catalog` 同时用于展示及根目录下的分类目录，三个资源的 `path` 均以 `<catalog>/` 开头，其下可自由分层、分目录。`catalog_name` 根据分类名称转换为 ASCII kebab-case，例如 `Data Science` → `data-science`；非 ASCII 名称、空转换结果、不同分类转换后撞名都报错，由用户调整。同一分类可以被多个案例复用。两个字段必须同时为空或同时填写。
+A nonempty `catalog` is the display label and a directory at the repository root. All resource paths start with `<catalog>/` and may use independent subdirectories beneath it. Derive `catalog_name` as ASCII kebab-case, for example `Data Science` becomes `data-science`. Non-ASCII names, empty conversions, and collisions between different catalogs produce errors for the user to resolve. Multiple cases may share a catalog. Both classification fields must be empty or both populated.
 
 ```text
-Data Science/示例目录/
+Data Science/example/
   cover.png
   session.science
   introduction.md
 ```
 
-目录、标题与 name 可独立命名。S3 始终使用 `<name>/<file_name>`，包解压内容位于 `<name>/extracted/`，目录迁移不改变 S3 资源键。
+Directories, titles, and names can be chosen independently. S3 always uses `<name>/<file_name>`, with extracted package contents under `<name>/extracted/`. Moving directories does not change S3 resource keys.
 
-原始 `.science` 会话内容保持不变。案例中标明的模拟演示和未解决结论仍以源会话为准，收录不代表模型的一般性能保证。
+Original `.science` session contents remain unchanged. Simulation demonstrations and unresolved conclusions noted in a case remain subject to the source session; inclusion does not guarantee general model performance.
 
-- [新增和修改案例](AGENTS.md)
-- [校验规则与命令](.github/CHECKING.md)
-- [发布、去重与恢复](.github/PUBLISHING.md)
+- [Adding and updating cases](AGENTS.md)
+- [Validation rules and commands](.github/CHECKING.md)
+- [Publication, deduplication, and recovery](.github/PUBLISHING.md)
 
-本地测试：`python3 -B -m unittest discover -s .github/tests -v`。测试使用临时数据及 fake S3，不执行真实发布。
+Local tests: `python3 -B -m unittest discover -s .github/tests -v`. Tests use temporary data and fake S3; they do not perform live publication.
