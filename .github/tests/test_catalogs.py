@@ -211,7 +211,7 @@ class CatalogTests(GitFixture):
             self.assertEqual(checker.catalog_errors(json.loads(step['manifest'])), [])
         store = Store(plan['baseline']); clears = []; refreshes = []
         store.clear_extracted = clears.append
-        store.refresh_cdn = lambda case_name=None, final=False: refreshes.append((case_name, final))
+        store.refresh_cdn = lambda case_name=None: refreshes.append(case_name)
         with contextlib.redirect_stdout(io.StringIO()):
             ready = publisher.prepare_resources(self.root, plan, store, self.root/'sources')
             ready = extract_science.expand_plan(self.root, ready, self.root/'staging')
@@ -222,5 +222,5 @@ class CatalogTests(GitFixture):
                 self.assertIn(entry['name']+'/'+entry[kind]['file_name'], store.writes[:first_commit])
             self.assertIn(entry['name']+'/extracted/session.json', store.writes[:first_commit])
         self.assertCountEqual(clears, ['b-case', 'c-case'])
-        self.assertEqual(refreshes[0], (None, True))
+        self.assertEqual(refreshes, ['b-case', 'c-case', None])
         self.assertEqual(store.manifest, (self.root/'manifest.json').read_text())

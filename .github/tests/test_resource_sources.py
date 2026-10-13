@@ -31,7 +31,7 @@ class Store:
         self.manifest = path.read_text()
         self.writes.append('manifest.json')
 
-    def refresh_cdn(self, case_name=None, final=False):
+    def refresh_cdn(self, case_name=None):
         pass
 
     def upload(self, path, key):
