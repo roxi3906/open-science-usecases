@@ -2,24 +2,24 @@
   {
     "title": "$10,000: NVIDIA, BITCOIN, OR BOTH?",
     "name": "10-000-nvidia-bitcoin-or-both",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/$10,000: NVIDIA, BITCOIN, OR BOTH?/$10,000: NVIDIA, BITCOIN, OR BOTH?.png",
+      "path": "Curiosity Lab/$10,000: NVIDIA, BITCOIN, OR BOTH?/$10,000: NVIDIA, BITCOIN, OR BOTH?.png",
       "file_name": "$10,000: NVIDIA, BITCOIN, OR BOTH?.png",
       "bytes": 2401612,
       "sha256": "9b14a3a5e9092536401373b92994eb71f05fcd8243c12c35e6262e54f46adf69",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/$10,000: NVIDIA, BITCOIN, OR BOTH?/$10,000: NVIDIA, BITCOIN, OR BOTH?.science",
+      "path": "Curiosity Lab/$10,000: NVIDIA, BITCOIN, OR BOTH?/$10,000: NVIDIA, BITCOIN, OR BOTH?.science",
       "file_name": "$10,000: NVIDIA, BITCOIN, OR BOTH?.science",
       "bytes": 653867,
       "sha256": "b260f774af1190f7a4e5dee5495aa8cd55d180bf7a18781c7c5fae995a3fcf8d",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/$10,000: NVIDIA, BITCOIN, OR BOTH?/$10,000: NVIDIA, BITCOIN, OR BOTH?.md",
+      "path": "Curiosity Lab/$10,000: NVIDIA, BITCOIN, OR BOTH?/$10,000: NVIDIA, BITCOIN, OR BOTH?.md",
       "file_name": "$10,000: NVIDIA, BITCOIN, OR BOTH?.md",
       "bytes": 1051,
       "sha256": "8683a17a3688b697fe37260dda3fca2b5b2d10e801c8587b6bffa777d1496cd1",
@@ -29,24 +29,24 @@
   {
     "title": "99% Pure - Does Molecular Handedness Matter",
     "name": "99-pure-does-molecular-handedness-matter",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/99% Pure - Does Molecular Handedness Matter/99% Pure - Does Molecular Handedness Matter.png",
+      "path": "Curiosity Lab/99% Pure - Does Molecular Handedness Matter/99% Pure - Does Molecular Handedness Matter.png",
       "file_name": "99% Pure - Does Molecular Handedness Matter.png",
       "bytes": 1848045,
       "sha256": "0cc353b450e082d5971f6ed96e9314862ce78085b74d838fbb3f93a1fd4bfe6c",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/99% Pure - Does Molecular Handedness Matter/99% Pure - Does Molecular Handedness Matter.science",
+      "path": "Curiosity Lab/99% Pure - Does Molecular Handedness Matter/99% Pure - Does Molecular Handedness Matter.science",
       "file_name": "99% Pure - Does Molecular Handedness Matter.science",
       "bytes": 725418,
       "sha256": "32905d517617c013333224e29049e8b7e4212d2061070c37c38a336561af84e9",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/99% Pure - Does Molecular Handedness Matter/99% Pure - Does Molecular Handedness Matter.md",
+      "path": "Curiosity Lab/99% Pure - Does Molecular Handedness Matter/99% Pure - Does Molecular Handedness Matter.md",
       "file_name": "99% Pure - Does Molecular Handedness Matter.md",
       "bytes": 1022,
       "sha256": "b2704ef7a2aa85661c3d816f7fc6a502ca092fc214ee721f016bc97aaef3b7c6",
@@ -56,24 +56,24 @@
   {
     "title": "A City's 100-Year Rainfall Record",
     "name": "a-city-s-100-year-rainfall-record",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/A City's 100-Year Rainfall Record/A City's 100-Year Rainfall Record.png",
+      "path": "Curiosity Lab/A City's 100-Year Rainfall Record/A City's 100-Year Rainfall Record.png",
       "file_name": "A City's 100-Year Rainfall Record.png",
       "bytes": 2410298,
       "sha256": "034d6ccbfa44fd6df7d6cdd7d096afb26cab8e2cafd69ecf47f570275600d15b",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/A City's 100-Year Rainfall Record/A City's 100-Year Rainfall Record.science",
+      "path": "Curiosity Lab/A City's 100-Year Rainfall Record/A City's 100-Year Rainfall Record.science",
       "file_name": "A City's 100-Year Rainfall Record.science",
       "bytes": 8186696,
       "sha256": "2817a64e416c0003d790c23c00745f0d4289d0acc48698213eb89f6b062eefc8",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/A City's 100-Year Rainfall Record/A City's 100-Year Rainfall Record.md",
+      "path": "Curiosity Lab/A City's 100-Year Rainfall Record/A City's 100-Year Rainfall Record.md",
       "file_name": "A City's 100-Year Rainfall Record.md",
       "bytes": 1088,
       "sha256": "fa0666612fe68ae38e9b79fdae196dac7f0d81cd1c6ee1aa6130118daa690469",
@@ -83,24 +83,24 @@
   {
     "title": "A Million Examples - Is That a Proof",
     "name": "a-million-examples-is-that-a-proof",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/A Million Examples - Is That a Proof/A Million Examples - Is That a Proof.png",
+      "path": "Curiosity Lab/A Million Examples - Is That a Proof/A Million Examples - Is That a Proof.png",
       "file_name": "A Million Examples - Is That a Proof.png",
       "bytes": 2717313,
       "sha256": "2bfcfec65a748ace73707b5310bfa047673394eb30286aaa2a250d706157e900",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/A Million Examples - Is That a Proof/A Million Examples - Is That a Proof.science",
+      "path": "Curiosity Lab/A Million Examples - Is That a Proof/A Million Examples - Is That a Proof.science",
       "file_name": "A Million Examples - Is That a Proof.science",
       "bytes": 855771,
       "sha256": "7837410c9c39d9a3c7f7a845d91aadeea8eb3eef3dafe468be68eedfc1925d57",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/A Million Examples - Is That a Proof/A Million Examples - Is That a Proof.md",
+      "path": "Curiosity Lab/A Million Examples - Is That a Proof/A Million Examples - Is That a Proof.md",
       "file_name": "A Million Examples - Is That a Proof.md",
       "bytes": 4788,
       "sha256": "c6516b1efbd1e3d775afd631822e7e15d20bc7c22631baa502d894182d3ade2d",
@@ -218,24 +218,24 @@
   {
     "title": "At 70% should you take it",
     "name": "at-70-should-you-take-it",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/At 70% should you take it/At 70% should you take it.png",
+      "path": "Curiosity Lab/At 70% should you take it/At 70% should you take it.png",
       "file_name": "At 70% should you take it.png",
       "bytes": 2575579,
       "sha256": "96ad73069fe8c8d59845def3821b05b1b69420fc49c1f8396e52150c27aa0f08",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/At 70% should you take it/At 70% should you take it.science",
+      "path": "Curiosity Lab/At 70% should you take it/At 70% should you take it.science",
       "file_name": "At 70% should you take it.science",
       "bytes": 690935,
       "sha256": "a3aedfce18b494fdbdf275be58afaa967b3b6c6105eb62220633907fc29c597a",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/At 70% should you take it/At 70% should you take it.md",
+      "path": "Curiosity Lab/At 70% should you take it/At 70% should you take it.md",
       "file_name": "At 70% should you take it.md",
       "bytes": 1050,
       "sha256": "bf697baf53d257b6e330c5c7334cdc0edd76263bc94c394faa856fca923a29e7",
@@ -245,24 +245,24 @@
   {
     "title": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim",
     "name": "birthday-paradox-simulation-verifying-the-23-person-50-claim",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Birthday Paradox Simulation Verifying the 23-Person 50% Claim/Birthday Paradox Simulation Verifying the 23-Person 50% Claim.png",
+      "path": "Curiosity Lab/Birthday Paradox Simulation Verifying the 23-Person 50% Claim/Birthday Paradox Simulation Verifying the 23-Person 50% Claim.png",
       "file_name": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim.png",
       "bytes": 2439693,
       "sha256": "8b4f4985ddca36292d0663f39267c35b9b3392bfd8cd107c2cc2503571697e0b",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Birthday Paradox Simulation Verifying the 23-Person 50% Claim/Birthday Paradox Simulation Verifying the 23-Person 50% Claim.science",
+      "path": "Curiosity Lab/Birthday Paradox Simulation Verifying the 23-Person 50% Claim/Birthday Paradox Simulation Verifying the 23-Person 50% Claim.science",
       "file_name": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim.science",
       "bytes": 511124,
       "sha256": "2928cf57b1a54e825f00fa216c9f0796808c3f01236a54101f5d06be9aabf2ee",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Birthday Paradox Simulation Verifying the 23-Person 50% Claim/Birthday Paradox Simulation Verifying the 23-Person 50% Claim.md",
+      "path": "Curiosity Lab/Birthday Paradox Simulation Verifying the 23-Person 50% Claim/Birthday Paradox Simulation Verifying the 23-Person 50% Claim.md",
       "file_name": "Birthday Paradox Simulation Verifying the 23-Person 50% Claim.md",
       "bytes": 5067,
       "sha256": "374fe21a52d0f0fd989ea9f21ca21a1bf7f4651a9b28f7a086b2b425c8addb57",
@@ -272,24 +272,24 @@
   {
     "title": "Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest",
     "name": "bottled-water-in-convenience-stores-across-five-cities-what-is-the-price-gap-between-the-most-expensive-and-the-cheapest",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest.png",
+      "path": "Curiosity Lab/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest.png",
       "file_name": "Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest.png",
       "bytes": 2092426,
       "sha256": "5bb25ce01b6e8b19b4710581529c668811ddf8e5cdf645c16e80d5ced5bf9e2b",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest.science",
+      "path": "Curiosity Lab/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest.science",
       "file_name": "Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest.science",
       "bytes": 502694,
       "sha256": "c07ef5eb736b534dc586fd4e4d02f9b404510309e8f30398feb1e5e7654988d2",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest.md",
+      "path": "Curiosity Lab/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest/Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest.md",
       "file_name": "Bottled Water in Convenience Stores Across Five Cities- What Is the Price Gap Between the Most Expensive and the Cheapest.md",
       "bytes": 1200,
       "sha256": "6802c12e475384cd76e99b5641ac059eefd6b5f6f8b23b795e7947e683402258",
@@ -326,24 +326,24 @@
   {
     "title": "Can 20 Pokémon Packs Guarantee an SIR",
     "name": "can-20-pokemon-packs-guarantee-an-sir",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Can 20 Pokémon Packs Guarantee an SIR/Can 20 Pokémon Packs Guarantee an SIR.png",
+      "path": "Curiosity Lab/Can 20 Pokémon Packs Guarantee an SIR/Can 20 Pokémon Packs Guarantee an SIR.png",
       "file_name": "Can 20 Pokémon Packs Guarantee an SIR.png",
       "bytes": 2716807,
       "sha256": "267e137121e1207afb0f3934e206ab9374f474f3dc657dd1df8cd8bacd5924b0",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Can 20 Pokémon Packs Guarantee an SIR/Can 20 Pokémon Packs Guarantee an SIR.science",
+      "path": "Curiosity Lab/Can 20 Pokémon Packs Guarantee an SIR/Can 20 Pokémon Packs Guarantee an SIR.science",
       "file_name": "Can 20 Pokémon Packs Guarantee an SIR.science",
       "bytes": 340958,
       "sha256": "d466cb5cade8fd5db7d4440e8dd1c8829d97c9361332d6a1b8826e8081038570",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Can 20 Pokémon Packs Guarantee an SIR/Can 20 Pokémon Packs Guarantee an SIR.md",
+      "path": "Curiosity Lab/Can 20 Pokémon Packs Guarantee an SIR/Can 20 Pokémon Packs Guarantee an SIR.md",
       "file_name": "Can 20 Pokémon Packs Guarantee an SIR.md",
       "bytes": 1050,
       "sha256": "c4017940a62bf4f6767543ab43365c97db49813878cf15856b5da44b26b98ae8",
@@ -731,24 +731,24 @@
   {
     "title": "CAN AI PICK LUCKY LOTTERY NUMBERS?",
     "name": "can-ai-pick-lucky-lottery-numbers",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/CAN AI PICK LUCKY LOTTERY NUMBERS?/CAN AI PICK LUCKY LOTTERY NUMBERS?.png",
+      "path": "Curiosity Lab/CAN AI PICK LUCKY LOTTERY NUMBERS?/CAN AI PICK LUCKY LOTTERY NUMBERS?.png",
       "file_name": "CAN AI PICK LUCKY LOTTERY NUMBERS?.png",
       "bytes": 2401612,
       "sha256": "9b14a3a5e9092536401373b92994eb71f05fcd8243c12c35e6262e54f46adf69",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/CAN AI PICK LUCKY LOTTERY NUMBERS?/CAN AI PICK LUCKY LOTTERY NUMBERS?.science",
+      "path": "Curiosity Lab/CAN AI PICK LUCKY LOTTERY NUMBERS?/CAN AI PICK LUCKY LOTTERY NUMBERS?.science",
       "file_name": "CAN AI PICK LUCKY LOTTERY NUMBERS?.science",
       "bytes": 7842853,
       "sha256": "bb6a3c916e6dc2d9c1124c69229ccda5fb1c35246923cc09f251b3b183b20023",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/CAN AI PICK LUCKY LOTTERY NUMBERS?/CAN AI PICK LUCKY LOTTERY NUMBERS?.md",
+      "path": "Curiosity Lab/CAN AI PICK LUCKY LOTTERY NUMBERS?/CAN AI PICK LUCKY LOTTERY NUMBERS?.md",
       "file_name": "CAN AI PICK LUCKY LOTTERY NUMBERS?.md",
       "bytes": 1023,
       "sha256": "174d9a7905fae4fd0c28e2df29986a171a7f2b45ac906bce774b37971dd740c3",
@@ -947,24 +947,24 @@
   {
     "title": "Can GLP-1 Drugs Really Help Us Live Longer",
     "name": "can-glp-1-drugs-really-help-us-live-longer",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Can GLP-1 Drugs Really Help Us Live Longer/Can GLP-1 Drugs Really Help Us Live Longer.png",
+      "path": "Curiosity Lab/Can GLP-1 Drugs Really Help Us Live Longer/Can GLP-1 Drugs Really Help Us Live Longer.png",
       "file_name": "Can GLP-1 Drugs Really Help Us Live Longer.png",
       "bytes": 2493772,
       "sha256": "c9cd168b371f6cc2e3eac6d92e71555112c303939747099f162feadc10111ce7",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Can GLP-1 Drugs Really Help Us Live Longer/Can GLP-1 Drugs Really Help Us Live Longer.science",
+      "path": "Curiosity Lab/Can GLP-1 Drugs Really Help Us Live Longer/Can GLP-1 Drugs Really Help Us Live Longer.science",
       "file_name": "Can GLP-1 Drugs Really Help Us Live Longer.science",
       "bytes": 89251,
       "sha256": "be052cbfd3b1ead7938171671929433404c73bea9b9bcb3e231efe6db6aa1f8b",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Can GLP-1 Drugs Really Help Us Live Longer/Can GLP-1 Drugs Really Help Us Live Longer.md",
+      "path": "Curiosity Lab/Can GLP-1 Drugs Really Help Us Live Longer/Can GLP-1 Drugs Really Help Us Live Longer.md",
       "file_name": "Can GLP-1 Drugs Really Help Us Live Longer.md",
       "bytes": 6001,
       "sha256": "5b2991ecbfd90d4aa5c760bf81201be4b3c251de7c760f002794358cf3553352",
@@ -1028,24 +1028,24 @@
   {
     "title": "CAN ONE WEEK FLIP THE WINNER?",
     "name": "can-one-week-flip-the-winner",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/CAN ONE WEEK FLIP THE WINNER?/CAN ONE WEEK FLIP THE WINNER?.png",
+      "path": "Curiosity Lab/CAN ONE WEEK FLIP THE WINNER?/CAN ONE WEEK FLIP THE WINNER?.png",
       "file_name": "CAN ONE WEEK FLIP THE WINNER?.png",
       "bytes": 2401612,
       "sha256": "9b14a3a5e9092536401373b92994eb71f05fcd8243c12c35e6262e54f46adf69",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/CAN ONE WEEK FLIP THE WINNER?/CAN ONE WEEK FLIP THE WINNER?.science",
+      "path": "Curiosity Lab/CAN ONE WEEK FLIP THE WINNER?/CAN ONE WEEK FLIP THE WINNER?.science",
       "file_name": "CAN ONE WEEK FLIP THE WINNER?.science",
       "bytes": 758814,
       "sha256": "b0d4e5b24ee64225da244e3bf97c2ada2c198919489e81cc043ec35d9d100815",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/CAN ONE WEEK FLIP THE WINNER?/CAN ONE WEEK FLIP THE WINNER?.md",
+      "path": "Curiosity Lab/CAN ONE WEEK FLIP THE WINNER?/CAN ONE WEEK FLIP THE WINNER?.md",
       "file_name": "CAN ONE WEEK FLIP THE WINNER?.md",
       "bytes": 1019,
       "sha256": "1413c9f4498ae63d753c16aa869ade4870c752a6bf2f10a851ce848fc1f8b014",
@@ -1055,24 +1055,24 @@
   {
     "title": "Can petal length identify iris",
     "name": "can-petal-length-identify-iris",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Can petal length identify iris/Can petal length identify iris.png",
+      "path": "Curiosity Lab/Can petal length identify iris/Can petal length identify iris.png",
       "file_name": "Can petal length identify iris.png",
       "bytes": 2426911,
       "sha256": "42024cfc3811b99211b3a01281307e2c62c50ef4a0305d7a82527bd5c3e94d7d",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Can petal length identify iris/Can petal length identify iris.science",
+      "path": "Curiosity Lab/Can petal length identify iris/Can petal length identify iris.science",
       "file_name": "Can petal length identify iris.science",
       "bytes": 645940,
       "sha256": "68e9004008463cf80df47688c66702aa5ed9bc9ea4880fac0deb84870e4631c4",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Can petal length identify iris/Can petal length identify iris.md",
+      "path": "Curiosity Lab/Can petal length identify iris/Can petal length identify iris.md",
       "file_name": "Can petal length identify iris.md",
       "bytes": 1006,
       "sha256": "421fbd67b66f3485af77226021325bd34517fc48b56674d5e78ea28364624a1a",
@@ -1109,24 +1109,24 @@
   {
     "title": "Card Shuffle Adjacency Simulation",
     "name": "card-shuffle-adjacency-simulation",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Card Shuffle Adjacency Simulation/Card Shuffle Adjacency Simulation.png",
+      "path": "Curiosity Lab/Card Shuffle Adjacency Simulation/Card Shuffle Adjacency Simulation.png",
       "file_name": "Card Shuffle Adjacency Simulation.png",
       "bytes": 3097067,
       "sha256": "1861214dbbfbe6c3d6fd18e48be44e2a7ad0e9a4408451e5251b88faba5a2c94",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Card Shuffle Adjacency Simulation/Card Shuffle Adjacency Simulation.science",
+      "path": "Curiosity Lab/Card Shuffle Adjacency Simulation/Card Shuffle Adjacency Simulation.science",
       "file_name": "Card Shuffle Adjacency Simulation.science",
       "bytes": 2335874,
       "sha256": "192311e67203c0029e70f8b0651c4e9b712b5db4f086f9d5a9087f7eacc3f3f8",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Card Shuffle Adjacency Simulation/Card Shuffle Adjacency Simulation.md",
+      "path": "Curiosity Lab/Card Shuffle Adjacency Simulation/Card Shuffle Adjacency Simulation.md",
       "file_name": "Card Shuffle Adjacency Simulation.md",
       "bytes": 1004,
       "sha256": "b5a66af6e8c66270806d4af15ff2092722473c04e2558151e8af1975741fd437",
@@ -1136,24 +1136,24 @@
   {
     "title": "Chiral Molecules - Can a 0.1% Lead Take Over",
     "name": "chiral-molecules-can-a-0-1-lead-take-over",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Chiral Molecules - Can a 0.1% Lead Take Over/Chiral Molecules - Can a 0.1% Lead Take Over.png",
+      "path": "Curiosity Lab/Chiral Molecules - Can a 0.1% Lead Take Over/Chiral Molecules - Can a 0.1% Lead Take Over.png",
       "file_name": "Chiral Molecules - Can a 0.1% Lead Take Over.png",
       "bytes": 1949542,
       "sha256": "b3a66253077d75388ec2ba529de585a1c223ab21e17f56ee15bd08c5d7926968",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Chiral Molecules - Can a 0.1% Lead Take Over/Chiral Molecules - Can a 0.1% Lead Take Over.science",
+      "path": "Curiosity Lab/Chiral Molecules - Can a 0.1% Lead Take Over/Chiral Molecules - Can a 0.1% Lead Take Over.science",
       "file_name": "Chiral Molecules - Can a 0.1% Lead Take Over.science",
       "bytes": 9111097,
       "sha256": "0f369f09310ad301aa85322ac0d1c2e943f27903c67c208d45636a8ef58e9f11",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Chiral Molecules - Can a 0.1% Lead Take Over/Chiral Molecules - Can a 0.1% Lead Take Over.md",
+      "path": "Curiosity Lab/Chiral Molecules - Can a 0.1% Lead Take Over/Chiral Molecules - Can a 0.1% Lead Take Over.md",
       "file_name": "Chiral Molecules - Can a 0.1% Lead Take Over.md",
       "bytes": 1058,
       "sha256": "a44e79111439f48b55aa9fe1b56550d6b061cf54d8e49775df616755d006f52d",
@@ -1163,24 +1163,24 @@
   {
     "title": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers",
     "name": "coin-flip-streak-simulation-luck-vs-skill-across-1-000-guessers",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.png",
+      "path": "Curiosity Lab/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.png",
       "file_name": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.png",
       "bytes": 2642434,
       "sha256": "2dcbe3f87dd025758c5dfbddb8bd3572496413b66c84aba797cc0619aea982ce",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.science",
+      "path": "Curiosity Lab/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.science",
       "file_name": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.science",
       "bytes": 164909,
       "sha256": "3e8ffbbd3d90f1abe48ebad35804416784b0fd13f5a65a2af7d76403983c7a90",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.md",
+      "path": "Curiosity Lab/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers/Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.md",
       "file_name": "Coin Flip Streak Simulation Luck vs. Skill Across 1,000 Guessers.md",
       "bytes": 5828,
       "sha256": "5af7c26979229ec313909933b21c03a30a66e745c2515b6d1b937b249c0f1efa",
@@ -1190,24 +1190,24 @@
   {
     "title": "DO STOP-LOSSES PROTECT NVDA?",
     "name": "do-stop-losses-protect-nvda",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/DO STOP-LOSSES PROTECT NVDA?/DO STOP-LOSSES PROTECT NVDA?.png",
+      "path": "Curiosity Lab/DO STOP-LOSSES PROTECT NVDA?/DO STOP-LOSSES PROTECT NVDA?.png",
       "file_name": "DO STOP-LOSSES PROTECT NVDA?.png",
       "bytes": 2401612,
       "sha256": "9b14a3a5e9092536401373b92994eb71f05fcd8243c12c35e6262e54f46adf69",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/DO STOP-LOSSES PROTECT NVDA?/DO STOP-LOSSES PROTECT NVDA?.science",
+      "path": "Curiosity Lab/DO STOP-LOSSES PROTECT NVDA?/DO STOP-LOSSES PROTECT NVDA?.science",
       "file_name": "DO STOP-LOSSES PROTECT NVDA?.science",
       "bytes": 647702,
       "sha256": "e623d646bade2578b18d097eb97c28c34fa9d90b33c4e62fcff510dd4a618c3c",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/DO STOP-LOSSES PROTECT NVDA?/DO STOP-LOSSES PROTECT NVDA?.md",
+      "path": "Curiosity Lab/DO STOP-LOSSES PROTECT NVDA?/DO STOP-LOSSES PROTECT NVDA?.md",
       "file_name": "DO STOP-LOSSES PROTECT NVDA?.md",
       "bytes": 1015,
       "sha256": "172a18a7a037c17e4626e66573aa5775bb3e4aba7c35ed4440c64aeadc93853c",
@@ -1244,24 +1244,24 @@
   {
     "title": "For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle",
     "name": "for-the-same-one-square-meter-area-which-receives-more-solar-energy-over-the-course-of-a-year-london-or-seattle",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle.png",
+      "path": "Curiosity Lab/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle.png",
       "file_name": "For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle.png",
       "bytes": 2383883,
       "sha256": "3e82296b0854ecd39b68a0cb3853f074d6039baa4ec915ef7c01f7aebe802a8f",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle.science",
+      "path": "Curiosity Lab/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle.science",
       "file_name": "For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle.science",
       "bytes": 439629,
       "sha256": "6af9fa6dd9919310d431dd248b9e7158167691017ccd59abec225835dc0965b0",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle.md",
+      "path": "Curiosity Lab/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle/For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle.md",
       "file_name": "For the same one-square-meter area, which receives more solar energy over the course of a year London or Seattle.md",
       "bytes": 1178,
       "sha256": "278e76f6617cb65e18cb4bd62ff7c6f570d66b9d3e4fb6ff5dfcdd54c0df4ca2",
@@ -1271,24 +1271,24 @@
   {
     "title": "From 10 Metres Up, a 39° Throw Beats 45°",
     "name": "from-10-metres-up-a-39-throw-beats-45",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/From 10 Metres Up, a 39° Throw Beats 45°/From 10 Metres Up, a 39° Throw Beats 45°.png",
+      "path": "Curiosity Lab/From 10 Metres Up, a 39° Throw Beats 45°/From 10 Metres Up, a 39° Throw Beats 45°.png",
       "file_name": "From 10 Metres Up, a 39° Throw Beats 45°.png",
       "bytes": 2546762,
       "sha256": "1f0d3ed30fa472d838615f15060a5c0c20683535494fb23fa14ae5328fa8a60a",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/From 10 Metres Up, a 39° Throw Beats 45°/From 10 Metres Up, a 39° Throw Beats 45°.science",
+      "path": "Curiosity Lab/From 10 Metres Up, a 39° Throw Beats 45°/From 10 Metres Up, a 39° Throw Beats 45°.science",
       "file_name": "From 10 Metres Up, a 39° Throw Beats 45°.science",
       "bytes": 822326,
       "sha256": "9a57e2c5daebd442c0947c327fde48d012e752e79460eead98758f2beda49679",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/From 10 Metres Up, a 39° Throw Beats 45°/From 10 Metres Up, a 39° Throw Beats 45°.md",
+      "path": "Curiosity Lab/From 10 Metres Up, a 39° Throw Beats 45°/From 10 Metres Up, a 39° Throw Beats 45°.md",
       "file_name": "From 10 Metres Up, a 39° Throw Beats 45°.md",
       "bytes": 3713,
       "sha256": "df672c0c94d9e38ff920c353c7c9f3044764a10f43ce26368e6aed22cdd6219b",
@@ -1298,24 +1298,24 @@
   {
     "title": "From brain map to walking fly",
     "name": "from-brain-map-to-walking-fly",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/From brain map to walking fly/From brain map to walking fly.png",
+      "path": "Curiosity Lab/From brain map to walking fly/From brain map to walking fly.png",
       "file_name": "From brain map to walking fly.png",
       "bytes": 2618603,
       "sha256": "bef7405e8f7ce20217e8788cddbe449b4dfa02d3b12d364b781fe9b41f7c581b",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/From brain map to walking fly/From brain map to walking fly.science",
+      "path": "Curiosity Lab/From brain map to walking fly/From brain map to walking fly.science",
       "file_name": "From brain map to walking fly.science",
       "bytes": 45130,
       "sha256": "e2ae2971426dc77e11b834cfdbe47c41aa7daff63c460954571897b4ad6088b9",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/From brain map to walking fly/From brain map to walking fly.md",
+      "path": "Curiosity Lab/From brain map to walking fly/From brain map to walking fly.md",
       "file_name": "From brain map to walking fly.md",
       "bytes": 1058,
       "sha256": "2571c89f1329bf45fd38e1168382ef3e22f9f02329cca3af18d02b90b84caadd",
@@ -1325,24 +1325,24 @@
   {
     "title": "Gold vs Bitcoin 28 Days Changed the Winner",
     "name": "gold-vs-bitcoin-28-days-changed-the-winner",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Gold vs Bitcoin 28 Days Changed the Winner/Gold vs Bitcoin 28 Days Changed the Winner.png",
+      "path": "Curiosity Lab/Gold vs Bitcoin 28 Days Changed the Winner/Gold vs Bitcoin 28 Days Changed the Winner.png",
       "file_name": "Gold vs Bitcoin 28 Days Changed the Winner.png",
       "bytes": 2560864,
       "sha256": "39a475575077a66619d94f78936adfbc1d75ac04756ffb6885add5bf9b804b0f",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Gold vs Bitcoin 28 Days Changed the Winner/Gold vs Bitcoin 28 Days Changed the Winner.science",
+      "path": "Curiosity Lab/Gold vs Bitcoin 28 Days Changed the Winner/Gold vs Bitcoin 28 Days Changed the Winner.science",
       "file_name": "Gold vs Bitcoin 28 Days Changed the Winner.science",
       "bytes": 1176174,
       "sha256": "ec35972d61ce1e563a2c22f768f22398f51b60bbf692dd4e7d3c4421f18c77bb",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Gold vs Bitcoin 28 Days Changed the Winner/Gold vs Bitcoin 28 Days Changed the Winner.md",
+      "path": "Curiosity Lab/Gold vs Bitcoin 28 Days Changed the Winner/Gold vs Bitcoin 28 Days Changed the Winner.md",
       "file_name": "Gold vs Bitcoin 28 Days Changed the Winner.md",
       "bytes": 1001,
       "sha256": "65cc7caa203868e5c5280806245979f5f70e6930e099026f4b505b096c5c7592",
@@ -1352,24 +1352,24 @@
   {
     "title": "Gold, Bitcoin, Nvidia, and the S&P How Big Will",
     "name": "gold-bitcoin-nvidia-and-the-s-p-how-big-will",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Gold, Bitcoin, Nvidia, and the S&P How Big Will/Gold, Bitcoin, Nvidia, and the S&P How Big Will.png",
+      "path": "Curiosity Lab/Gold, Bitcoin, Nvidia, and the S&P How Big Will/Gold, Bitcoin, Nvidia, and the S&P How Big Will.png",
       "file_name": "Gold, Bitcoin, Nvidia, and the S&P How Big Will.png",
       "bytes": 2962598,
       "sha256": "cfc3c3e88a41623a998158724d1f070d341ae6b0cfc08800a4b5cd245698f33f",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Gold, Bitcoin, Nvidia, and the S&P How Big Will/Gold, Bitcoin, Nvidia, and the S&P How Big Will.science",
+      "path": "Curiosity Lab/Gold, Bitcoin, Nvidia, and the S&P How Big Will/Gold, Bitcoin, Nvidia, and the S&P How Big Will.science",
       "file_name": "Gold, Bitcoin, Nvidia, and the S&P How Big Will.science",
       "bytes": 3406324,
       "sha256": "513196d261e086a06d8d9c0f019761519e714634035c6383f04648dde59e4cdb",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Gold, Bitcoin, Nvidia, and the S&P How Big Will/Gold, Bitcoin, Nvidia, and the S&P How Big Will.md",
+      "path": "Curiosity Lab/Gold, Bitcoin, Nvidia, and the S&P How Big Will/Gold, Bitcoin, Nvidia, and the S&P How Big Will.md",
       "file_name": "Gold, Bitcoin, Nvidia, and the S&P How Big Will.md",
       "bytes": 1026,
       "sha256": "2f62e21f144fa743294e4aa715f74bdb732682ffe2aa2c4a5ac61d60c7011179",
@@ -1379,24 +1379,24 @@
   {
     "title": "Hotter Years, Hotter Days",
     "name": "hotter-years-hotter-days",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Hotter Years, Hotter Days/Hotter Years, Hotter Days.png",
+      "path": "Curiosity Lab/Hotter Years, Hotter Days/Hotter Years, Hotter Days.png",
       "file_name": "Hotter Years, Hotter Days.png",
       "bytes": 2454280,
       "sha256": "01bd0c1a1dd668381e4624c9184fed882efbb039dd0128cc63e7de6c91ca5679",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Hotter Years, Hotter Days/Hotter Years, Hotter Days.science",
+      "path": "Curiosity Lab/Hotter Years, Hotter Days/Hotter Years, Hotter Days.science",
       "file_name": "Hotter Years, Hotter Days.science",
       "bytes": 52025701,
       "sha256": "34936fe69b5100365a4dbee4bb902e82c166675e073b07439112bd252f337389",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Hotter Years, Hotter Days/Hotter Years, Hotter Days.md",
+      "path": "Curiosity Lab/Hotter Years, Hotter Days/Hotter Years, Hotter Days.md",
       "file_name": "Hotter Years, Hotter Days.md",
       "bytes": 1465,
       "sha256": "3c9dfa3d243aae9992c19506a2415f2bced9be7d3c19d81493b8c0daa4c9f610",
@@ -1404,26 +1404,53 @@
     }
   },
   {
+    "title": "How Often Do Job Posts Ask for Proficiency?",
+    "name": "how-often-do-job-posts-ask-for-proficiency",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
+    "cover": {
+      "path": "Curiosity Lab/How Often Do Job Posts Ask for Proficiency?/How Often Do Job Posts Ask for Proficiency?.png",
+      "file_name": "How Often Do Job Posts Ask for Proficiency?.png",
+      "bytes": 2486165,
+      "sha256": "202b2679d095e5dd47e08e762fdc43995181171032f652f32affc2f1021b611f",
+      "release_url": ""
+    },
+    "case": {
+      "path": "Curiosity Lab/How Often Do Job Posts Ask for Proficiency?/How Often Do Job Posts Ask for Proficiency?.science",
+      "file_name": "How Often Do Job Posts Ask for Proficiency?.science",
+      "bytes": 908499,
+      "sha256": "c912808c05d859398e179727222087ccda49189cb2334da5900a3e209b3e7747",
+      "release_url": "https://huggingface.co/datasets/AIPOCH-AI/open-science-usecases/resolve/5608f9845e54550f67d861e87b6b9735da864d5d/Curiosity%20Lab/How%20Often%20Do%20Job%20Posts%20Ask%20for%20Proficiency%3F/How%20Often%20Do%20Job%20Posts%20Ask%20for%20Proficiency%3F.science"
+    },
+    "introduction": {
+      "path": "Curiosity Lab/How Often Do Job Posts Ask for Proficiency?/How Often Do Job Posts Ask for Proficiency?.md",
+      "file_name": "How Often Do Job Posts Ask for Proficiency?.md",
+      "bytes": 1279,
+      "sha256": "7754cb4fe494e85ac8d3c88566c225b0e4d264f2df8270564c02aba83db49179",
+      "release_url": ""
+    }
+  },
+  {
     "title": "How early should you leave",
     "name": "how-early-should-you-leave",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/How early should you leave/How early should you leave.png",
+      "path": "Curiosity Lab/How early should you leave/How early should you leave.png",
       "file_name": "How early should you leave.png",
       "bytes": 2426315,
       "sha256": "1da6f00b0ab62d3d7df6c4f7e907877232d239122b327ccbb33736629b046854",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/How early should you leave/How early should you leave.science",
+      "path": "Curiosity Lab/How early should you leave/How early should you leave.science",
       "file_name": "How early should you leave.science",
       "bytes": 2032032,
       "sha256": "cf2aa3b36100cd4db060222567c6efc8a4ec7b4bfe4c6799e38ac35af7ea9b99",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/How early should you leave/How early should you leave.md",
+      "path": "Curiosity Lab/How early should you leave/How early should you leave.md",
       "file_name": "How early should you leave.md",
       "bytes": 1019,
       "sha256": "dbae61ca9f3544c5f22afc1261f94d6ef002047da0b4be37378906081751b371",
@@ -1487,24 +1514,24 @@
   {
     "title": "How much does battery health decline after two years of smartphone use",
     "name": "how-much-does-battery-health-decline-after-two-years-of-smartphone-use",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/How much does battery health decline after two years of smartphone use/How much does battery health decline after two years of smartphone use.png",
+      "path": "Curiosity Lab/How much does battery health decline after two years of smartphone use/How much does battery health decline after two years of smartphone use.png",
       "file_name": "How much does battery health decline after two years of smartphone use.png",
       "bytes": 1848843,
       "sha256": "e3e30b742a8c3cc8a71b0a66e75a8bfb98db9a1cc15d5e7ee7be0e2b6f6aa730",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/How much does battery health decline after two years of smartphone use/How much does battery health decline after two years of smartphone use.science",
+      "path": "Curiosity Lab/How much does battery health decline after two years of smartphone use/How much does battery health decline after two years of smartphone use.science",
       "file_name": "How much does battery health decline after two years of smartphone use.science",
       "bytes": 91349,
       "sha256": "319ebbe5ba48eec36e0fd3a1304e847712c032712e5e65e9f40d5fca8e481cdc",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/How much does battery health decline after two years of smartphone use/How much does battery health decline after two years of smartphone use.md",
+      "path": "Curiosity Lab/How much does battery health decline after two years of smartphone use/How much does battery health decline after two years of smartphone use.md",
       "file_name": "How much does battery health decline after two years of smartphone use.md",
       "bytes": 1081,
       "sha256": "6d609686a55d6d12963be25b480b153e5900f5a8ff988e31cf67c44c23719fd0",
@@ -1541,27 +1568,54 @@
   {
     "title": "If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it",
     "name": "if-a-rigged-coin-is-mixed-in-with-twenty-coins-how-many-tosses-does-it-take-to-catch-it",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it.png",
+      "path": "Curiosity Lab/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it.png",
       "file_name": "If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it.png",
       "bytes": 2258139,
       "sha256": "0509c74e9d364c56264b8fd05026ea3c0b9c11db43d93f890dd2cf78ccb9d6fe",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it.science",
+      "path": "Curiosity Lab/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it.science",
       "file_name": "If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it.science",
       "bytes": 631773,
       "sha256": "affaed921697d0480e10f30a534e224c1f0254ff2d7dbda276f55667679a487d",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it.md",
+      "path": "Curiosity Lab/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it/If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it.md",
       "file_name": "If a rigged coin is mixed in with twenty coins, how many tosses does it take to catch it.md",
       "bytes": 1138,
       "sha256": "b8f26f4aff148b66ff8b9703b5d27e26e96699167605a10ddbdbe18cd01c6422",
+      "release_url": ""
+    }
+  },
+  {
+    "title": "In a Year's Worth of Weather Forecasts, Are Predictions of ‘Sunny’ Weather More Accurate, or Are Predictions of ‘Rain’ More Accurate?",
+    "name": "in-a-year-s-worth-of-weather-forecasts-are-predictions-of-sunny-weather-more-accurate-or-are-predictions-of-rain-more-accurate",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
+    "cover": {
+      "path": "Curiosity Lab/In a Year's Worth of Weather Forecasts, Are Predictions of ‘Sunny’ Weather More Accurate, or Are Predictions of ‘Rain’ More Accurate?/In a Year's Worth of Weather Forecasts, Are Predictions of ‘Sunny’ Weather More Accurate, or Are Predictions of ‘Rain’ More Accurate?.png",
+      "file_name": "In a Year's Worth of Weather Forecasts, Are Predictions of ‘Sunny’ Weather More Accurate, or Are Predictions of ‘Rain’ More Accurate?.png",
+      "bytes": 2605433,
+      "sha256": "ec8dc195f4de2c4faf2657fd32acd1842f4854b127006367f9fe99d2465834ef",
+      "release_url": ""
+    },
+    "case": {
+      "path": "Curiosity Lab/In a Year's Worth of Weather Forecasts, Are Predictions of ‘Sunny’ Weather More Accurate, or Are Predictions of ‘Rain’ More Accurate?/In a Year's Worth of Weather Forecasts, Are Predictions of ‘Sunny’ Weather More Accurate, or Are Predictions of ‘Rain’ More Accurate?.science",
+      "file_name": "In a Year's Worth of Weather Forecasts, Are Predictions of ‘Sunny’ Weather More Accurate, or Are Predictions of ‘Rain’ More Accurate?.science",
+      "bytes": 1074435,
+      "sha256": "7788014919a85daba4f4870a195bf068670d863960d96bd7c0bbd44f23c1ddcc",
+      "release_url": "https://huggingface.co/datasets/AIPOCH-AI/open-science-usecases/resolve/5608f9845e54550f67d861e87b6b9735da864d5d/Curiosity%20Lab/In%20a%20Year%27s%20Worth%20of%20Weather%20Forecasts%2C%20Are%20Predictions%20of%20%E2%80%98Sunny%E2%80%99%20Weather%20More%20Accurate%2C%20or%20Are%20Predictions%20of%20%E2%80%98Rain%E2%80%99%20More%20Accurate%3F/In%20a%20Year%27s%20Worth%20of%20Weather%20Forecasts%2C%20Are%20Predictions%20of%20%E2%80%98Sunny%E2%80%99%20Weather%20More%20Accurate%2C%20or%20Are%20Predictions%20of%20%E2%80%98Rain%E2%80%99%20More%20Accurate%3F.science"
+    },
+    "introduction": {
+      "path": "Curiosity Lab/In a Year's Worth of Weather Forecasts, Are Predictions of ‘Sunny’ Weather More Accurate, or Are Predictions of ‘Rain’ More Accurate?/In a Year's Worth of Weather Forecasts, Are Predictions of ‘Sunny’ Weather More Accurate, or Are Predictions of ‘Rain’ More Accurate?.md",
+      "file_name": "In a Year's Worth of Weather Forecasts, Are Predictions of ‘Sunny’ Weather More Accurate, or Are Predictions of ‘Rain’ More Accurate?.md",
+      "bytes": 1923,
+      "sha256": "34aaa8a857a6040a6bcb0bbe9d175e15863fa491f9eddca81eaca1d7d48c68ba",
       "release_url": ""
     }
   },
@@ -1595,24 +1649,24 @@
   {
     "title": "Light On - How Fast Do Neurons Respond",
     "name": "light-on-how-fast-do-neurons-respond",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Light On - How Fast Do Neurons Respond/Light On - How Fast Do Neurons Respond.png",
+      "path": "Curiosity Lab/Light On - How Fast Do Neurons Respond/Light On - How Fast Do Neurons Respond.png",
       "file_name": "Light On - How Fast Do Neurons Respond.png",
       "bytes": 1962719,
       "sha256": "790b676e46be90bbe75e91f79a80acd624ac746e8b8696cbf1d67a4b5fac7d48",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Light On - How Fast Do Neurons Respond/Light On - How Fast Do Neurons Respond.science",
+      "path": "Curiosity Lab/Light On - How Fast Do Neurons Respond/Light On - How Fast Do Neurons Respond.science",
       "file_name": "Light On - How Fast Do Neurons Respond.science",
       "bytes": 23690481,
       "sha256": "4dd4e0e65c8fbcceccb4f6da5ab0c22d9cfe30fa3ffbf6827dfaa2e67bd1e468",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Light On - How Fast Do Neurons Respond/Light On - How Fast Do Neurons Respond.md",
+      "path": "Curiosity Lab/Light On - How Fast Do Neurons Respond/Light On - How Fast Do Neurons Respond.md",
       "file_name": "Light On - How Fast Do Neurons Respond.md",
       "bytes": 1046,
       "sha256": "07ca5200c6a88638231e167940303b021c7c6ddfb8689661f64a7b76a1eca03c",
@@ -1622,24 +1676,24 @@
   {
     "title": "Light-Activated Neurons - Does the Cutoff Matter",
     "name": "light-activated-neurons-does-the-cutoff-matter",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Light-Activated Neurons - Does the Cutoff Matter/Light-Activated Neurons - Does the Cutoff Matter.png",
+      "path": "Curiosity Lab/Light-Activated Neurons - Does the Cutoff Matter/Light-Activated Neurons - Does the Cutoff Matter.png",
       "file_name": "Light-Activated Neurons - Does the Cutoff Matter.png",
       "bytes": 2042635,
       "sha256": "b76b5b3cde63cefd0be550dcb2f1eb8586649b51a44bb91b1715ca5ae95d5c7a",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Light-Activated Neurons - Does the Cutoff Matter/Light-Activated Neurons - Does the Cutoff Matter.science",
+      "path": "Curiosity Lab/Light-Activated Neurons - Does the Cutoff Matter/Light-Activated Neurons - Does the Cutoff Matter.science",
       "file_name": "Light-Activated Neurons - Does the Cutoff Matter.science",
       "bytes": 12304088,
       "sha256": "acd46947d444bf9a2826ddcb754508049560a9a0b5adae7ddc6fa251adf19171",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Light-Activated Neurons - Does the Cutoff Matter/Light-Activated Neurons - Does the Cutoff Matter.md",
+      "path": "Curiosity Lab/Light-Activated Neurons - Does the Cutoff Matter/Light-Activated Neurons - Does the Cutoff Matter.md",
       "file_name": "Light-Activated Neurons - Does the Cutoff Matter.md",
       "bytes": 1050,
       "sha256": "32e45534c7ff40c6dfe78a063481f749614f80114a0200c080923cf0c3e7e13e",
@@ -1676,24 +1730,24 @@
   {
     "title": "Mirror-Image Molecules - Can Algorithms Tell Them Apart",
     "name": "mirror-image-molecules-can-algorithms-tell-them-apart",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Mirror-Image Molecules - Can Algorithms Tell Them Apart/Mirror-Image Molecules - Can Algorithms Tell Them Apart.png",
+      "path": "Curiosity Lab/Mirror-Image Molecules - Can Algorithms Tell Them Apart/Mirror-Image Molecules - Can Algorithms Tell Them Apart.png",
       "file_name": "Mirror-Image Molecules - Can Algorithms Tell Them Apart.png",
       "bytes": 1825817,
       "sha256": "749eaf202870fc4455c0615a6f7201c06d642c30a6c503c94f956a0fe327322c",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Mirror-Image Molecules - Can Algorithms Tell Them Apart/Mirror-Image Molecules - Can Algorithms Tell Them Apart.science",
+      "path": "Curiosity Lab/Mirror-Image Molecules - Can Algorithms Tell Them Apart/Mirror-Image Molecules - Can Algorithms Tell Them Apart.science",
       "file_name": "Mirror-Image Molecules - Can Algorithms Tell Them Apart.science",
       "bytes": 809081,
       "sha256": "c63a47bc71b5a4b81a36573897e2ceda876b288a3bb7fd289a8a7235e8cee09d",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Mirror-Image Molecules - Can Algorithms Tell Them Apart/Mirror-Image Molecules - Can Algorithms Tell Them Apart.md",
+      "path": "Curiosity Lab/Mirror-Image Molecules - Can Algorithms Tell Them Apart/Mirror-Image Molecules - Can Algorithms Tell Them Apart.md",
       "file_name": "Mirror-Image Molecules - Can Algorithms Tell Them Apart.md",
       "bytes": 1066,
       "sha256": "bcb92fdcf969d8312e6a43fbbccdcefe96117be257636f722cf88b866b10b3fa",
@@ -1703,24 +1757,24 @@
   {
     "title": "Monthly rotation of best-performing assets vs. buy-and-hold",
     "name": "monthly-rotation-of-best-performing-assets-vs-buy-and-hold",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Monthly rotation of best-performing assets vs. buy-and-hold/Monthly rotation of best-performing assets vs. buy-and-hold.png",
+      "path": "Curiosity Lab/Monthly rotation of best-performing assets vs. buy-and-hold/Monthly rotation of best-performing assets vs. buy-and-hold.png",
       "file_name": "Monthly rotation of best-performing assets vs. buy-and-hold.png",
       "bytes": 2529626,
       "sha256": "b6c029035d77e5ce7f5d17c32fe5a5e3d3b71e4208dd09d079e02707a059ba00",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Monthly rotation of best-performing assets vs. buy-and-hold/Monthly rotation of best-performing assets vs. buy-and-hold.science",
+      "path": "Curiosity Lab/Monthly rotation of best-performing assets vs. buy-and-hold/Monthly rotation of best-performing assets vs. buy-and-hold.science",
       "file_name": "Monthly rotation of best-performing assets vs. buy-and-hold.science",
       "bytes": 2016889,
       "sha256": "b501fa4919be5b257d94efbb12a52028f339931d1618032b1477e1e14ea5269c",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Monthly rotation of best-performing assets vs. buy-and-hold/Monthly rotation of best-performing assets vs. buy-and-hold.md",
+      "path": "Curiosity Lab/Monthly rotation of best-performing assets vs. buy-and-hold/Monthly rotation of best-performing assets vs. buy-and-hold.md",
       "file_name": "Monthly rotation of best-performing assets vs. buy-and-hold.md",
       "bytes": 1062,
       "sha256": "076a3949c89e38d28565b4fe422596d6238f3c8a174a224200f88231dfa71e64",
@@ -1730,24 +1784,24 @@
   {
     "title": "Neurons Respond on Average - Does Every Trial Work",
     "name": "neurons-respond-on-average-does-every-trial-work",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Neurons Respond on Average - Does Every Trial Work/Neurons Respond on Average - Does Every Trial Work.png",
+      "path": "Curiosity Lab/Neurons Respond on Average - Does Every Trial Work/Neurons Respond on Average - Does Every Trial Work.png",
       "file_name": "Neurons Respond on Average - Does Every Trial Work.png",
       "bytes": 1975067,
       "sha256": "7f841c27ba309983ccf3b5f86560ac281ab766617882d32fa2d1b5a2ee9a4f57",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Neurons Respond on Average - Does Every Trial Work/Neurons Respond on Average - Does Every Trial Work.science",
+      "path": "Curiosity Lab/Neurons Respond on Average - Does Every Trial Work/Neurons Respond on Average - Does Every Trial Work.science",
       "file_name": "Neurons Respond on Average - Does Every Trial Work.science",
       "bytes": 8018281,
       "sha256": "c4972ddead00f5c8c5523e4825cb989e3bfd254d93cce1872f599b551de7de0d",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Neurons Respond on Average - Does Every Trial Work/Neurons Respond on Average - Does Every Trial Work.md",
+      "path": "Curiosity Lab/Neurons Respond on Average - Does Every Trial Work/Neurons Respond on Average - Does Every Trial Work.md",
       "file_name": "Neurons Respond on Average - Does Every Trial Work.md",
       "bytes": 1036,
       "sha256": "40b1170b300f4dc2ad7c92f477a049cb0e36118329a5158670c4e080370ef9ab",
@@ -1757,24 +1811,24 @@
   {
     "title": "Neutrino Energy - Does Higher Mean Sharper",
     "name": "neutrino-energy-does-higher-mean-sharper",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Neutrino Energy - Does Higher Mean Sharper/Neutrino Energy - Does Higher Mean Sharper.png",
+      "path": "Curiosity Lab/Neutrino Energy - Does Higher Mean Sharper/Neutrino Energy - Does Higher Mean Sharper.png",
       "file_name": "Neutrino Energy - Does Higher Mean Sharper.png",
       "bytes": 2160192,
       "sha256": "730d1479df3201455d7fbf87939ffc4c35133dbabbb73a76d298701db1c3bb99",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Neutrino Energy - Does Higher Mean Sharper/Neutrino Energy - Does Higher Mean Sharper.science",
+      "path": "Curiosity Lab/Neutrino Energy - Does Higher Mean Sharper/Neutrino Energy - Does Higher Mean Sharper.science",
       "file_name": "Neutrino Energy - Does Higher Mean Sharper.science",
       "bytes": 8091916,
       "sha256": "42c5a03e38de289ef68aed40c2f50c9bff67c15dcb7c92959521b1fc4d6f590a",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Neutrino Energy - Does Higher Mean Sharper/Neutrino Energy - Does Higher Mean Sharper.md",
+      "path": "Curiosity Lab/Neutrino Energy - Does Higher Mean Sharper/Neutrino Energy - Does Higher Mean Sharper.md",
       "file_name": "Neutrino Energy - Does Higher Mean Sharper.md",
       "bytes": 1043,
       "sha256": "2a1408641954f78622b240668be1de91634e66a3ff214f858bf0c0c31f737451",
@@ -1784,24 +1838,24 @@
   {
     "title": "Neutrino Hotspots - Signal or Chance",
     "name": "neutrino-hotspots-signal-or-chance",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Neutrino Hotspots - Signal or Chance/Neutrino Hotspots - Signal or Chance.png",
+      "path": "Curiosity Lab/Neutrino Hotspots - Signal or Chance/Neutrino Hotspots - Signal or Chance.png",
       "file_name": "Neutrino Hotspots - Signal or Chance.png",
       "bytes": 2094008,
       "sha256": "09b74eede8e7ea75a680db314d604cd6b353423f10eb82ee5a1ccd4d50f2de85",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Neutrino Hotspots - Signal or Chance/Neutrino Hotspots - Signal or Chance.science",
+      "path": "Curiosity Lab/Neutrino Hotspots - Signal or Chance/Neutrino Hotspots - Signal or Chance.science",
       "file_name": "Neutrino Hotspots - Signal or Chance.science",
       "bytes": 8892352,
       "sha256": "952a7dd53d95e1c0ccbabb3d5aedd7e1a9eb41376ede4b267063248d3e5f444a",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Neutrino Hotspots - Signal or Chance/Neutrino Hotspots - Signal or Chance.md",
+      "path": "Curiosity Lab/Neutrino Hotspots - Signal or Chance/Neutrino Hotspots - Signal or Chance.md",
       "file_name": "Neutrino Hotspots - Signal or Chance.md",
       "bytes": 1042,
       "sha256": "cc95e6d78d5df06e0ae5a666d53833a50eabb768b492a29a303cee516f9a350d",
@@ -1811,24 +1865,24 @@
   {
     "title": "NVDA: ALL AT ONCE OR FOUR WEEKS?",
     "name": "nvda-all-at-once-or-four-weeks",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/NVDA: ALL AT ONCE OR FOUR WEEKS?/NVDA: ALL AT ONCE OR FOUR WEEKS?.png",
+      "path": "Curiosity Lab/NVDA: ALL AT ONCE OR FOUR WEEKS?/NVDA: ALL AT ONCE OR FOUR WEEKS?.png",
       "file_name": "NVDA: ALL AT ONCE OR FOUR WEEKS?.png",
       "bytes": 2401612,
       "sha256": "9b14a3a5e9092536401373b92994eb71f05fcd8243c12c35e6262e54f46adf69",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/NVDA: ALL AT ONCE OR FOUR WEEKS?/NVDA: ALL AT ONCE OR FOUR WEEKS?.science",
+      "path": "Curiosity Lab/NVDA: ALL AT ONCE OR FOUR WEEKS?/NVDA: ALL AT ONCE OR FOUR WEEKS?.science",
       "file_name": "NVDA: ALL AT ONCE OR FOUR WEEKS?.science",
       "bytes": 693557,
       "sha256": "66209252c3ce74feef02d7ad262ba53d7064c10386c93bdfe8ff09b3aa9494b4",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/NVDA: ALL AT ONCE OR FOUR WEEKS?/NVDA: ALL AT ONCE OR FOUR WEEKS?.md",
+      "path": "Curiosity Lab/NVDA: ALL AT ONCE OR FOUR WEEKS?/NVDA: ALL AT ONCE OR FOUR WEEKS?.md",
       "file_name": "NVDA: ALL AT ONCE OR FOUR WEEKS?.md",
       "bytes": 1009,
       "sha256": "427fe146446744568ad9f52c3feb912fd211ac72111630e5ed27a7b21bb76c50",
@@ -1838,24 +1892,24 @@
   {
     "title": "One Neutrino - How Much Sky",
     "name": "one-neutrino-how-much-sky",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/One Neutrino - How Much Sky/One Neutrino - How Much Sky.png",
+      "path": "Curiosity Lab/One Neutrino - How Much Sky/One Neutrino - How Much Sky.png",
       "file_name": "One Neutrino - How Much Sky.png",
       "bytes": 2076690,
       "sha256": "1a2cbbd80a3209fa97e69d602e44f9f1eefa924880db797a950b7dd730f52baf",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/One Neutrino - How Much Sky/One Neutrino - How Much Sky.science",
+      "path": "Curiosity Lab/One Neutrino - How Much Sky/One Neutrino - How Much Sky.science",
       "file_name": "One Neutrino - How Much Sky.science",
       "bytes": 7483158,
       "sha256": "9ced09ecb39d1712264beedc393c46ed9e7c20190f60b91c64f8c0822e11c908",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/One Neutrino - How Much Sky/One Neutrino - How Much Sky.md",
+      "path": "Curiosity Lab/One Neutrino - How Much Sky/One Neutrino - How Much Sky.md",
       "file_name": "One Neutrino - How Much Sky.md",
       "bytes": 981,
       "sha256": "35607fff8380307c474171a73aab9a7cd159b41dd19711e408d0be95fd1beb4a",
@@ -1919,24 +1973,24 @@
   {
     "title": "Our Nearest Exoplanet - How Long Is the Trip",
     "name": "our-nearest-exoplanet-how-long-is-the-trip",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Our Nearest Exoplanet - How Long Is the Trip/Our Nearest Exoplanet - How Long Is the Trip.png",
+      "path": "Curiosity Lab/Our Nearest Exoplanet - How Long Is the Trip/Our Nearest Exoplanet - How Long Is the Trip.png",
       "file_name": "Our Nearest Exoplanet - How Long Is the Trip.png",
       "bytes": 2571257,
       "sha256": "b460a8c14e7f4b5e154db1d60062f0822b00f314859e68ac0f34fc6bdf6d6c65",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Our Nearest Exoplanet - How Long Is the Trip/Our Nearest Exoplanet - How Long Is the Trip.science",
+      "path": "Curiosity Lab/Our Nearest Exoplanet - How Long Is the Trip/Our Nearest Exoplanet - How Long Is the Trip.science",
       "file_name": "Our Nearest Exoplanet - How Long Is the Trip.science",
       "bytes": 3254700,
       "sha256": "05d7f12b19999e70fe04d3819788b15b428aebeed54f06d8474f80384ec47d5a",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Our Nearest Exoplanet - How Long Is the Trip/Our Nearest Exoplanet - How Long Is the Trip.md",
+      "path": "Curiosity Lab/Our Nearest Exoplanet - How Long Is the Trip/Our Nearest Exoplanet - How Long Is the Trip.md",
       "file_name": "Our Nearest Exoplanet - How Long Is the Trip.md",
       "bytes": 846,
       "sha256": "3bcf672f5070ea16f25012683bd38b892f71afcaa864f329d20c2ef40f77d8c0",
@@ -2000,24 +2054,24 @@
   {
     "title": "Shared vs Separate Checkout Lines Simulation",
     "name": "shared-vs-separate-checkout-lines-simulation",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Shared vs Separate Checkout Lines Simulation/Shared vs Separate Checkout Lines Simulation.png",
+      "path": "Curiosity Lab/Shared vs Separate Checkout Lines Simulation/Shared vs Separate Checkout Lines Simulation.png",
       "file_name": "Shared vs Separate Checkout Lines Simulation.png",
       "bytes": 2481439,
       "sha256": "1deecd139fa13294f84d203a9388d265def5942ae48600651ae2bd312220655b",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Shared vs Separate Checkout Lines Simulation/Shared vs Separate Checkout Lines Simulation.science",
+      "path": "Curiosity Lab/Shared vs Separate Checkout Lines Simulation/Shared vs Separate Checkout Lines Simulation.science",
       "file_name": "Shared vs Separate Checkout Lines Simulation.science",
       "bytes": 2889439,
       "sha256": "ed1294d9c493f144dcec061ba60b2c595aff6882b0a139ab217140e977a57e66",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Shared vs Separate Checkout Lines Simulation/Shared vs Separate Checkout Lines Simulation.md",
+      "path": "Curiosity Lab/Shared vs Separate Checkout Lines Simulation/Shared vs Separate Checkout Lines Simulation.md",
       "file_name": "Shared vs Separate Checkout Lines Simulation.md",
       "bytes": 1039,
       "sha256": "2be8744d1e61bc315759ebe5b8217c134880efbac5948cc287eda521fb6d7dc2",
@@ -2027,24 +2081,24 @@
   {
     "title": "Spending $100 on Ads vs. $100 on Content Which",
     "name": "spending-100-on-ads-vs-100-on-content-which",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Spending $100 on Ads vs. $100 on Content Which/Spending $100 on Ads vs. $100 on Content Which.png",
+      "path": "Curiosity Lab/Spending $100 on Ads vs. $100 on Content Which/Spending $100 on Ads vs. $100 on Content Which.png",
       "file_name": "Spending $100 on Ads vs. $100 on Content Which.png",
       "bytes": 2798276,
       "sha256": "45a768f6893cee950e9d3c176482725a5f4daaeec7525672e20772a8b7771638",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Spending $100 on Ads vs. $100 on Content Which/Spending $100 on Ads vs. $100 on Content Which.science",
+      "path": "Curiosity Lab/Spending $100 on Ads vs. $100 on Content Which/Spending $100 on Ads vs. $100 on Content Which.science",
       "file_name": "Spending $100 on Ads vs. $100 on Content Which.science",
       "bytes": 78762,
       "sha256": "1a71ea5f03131fb4c57c989a62b512b259dfd0faf8878560fffc20efa12b6c4e",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Spending $100 on Ads vs. $100 on Content Which/Spending $100 on Ads vs. $100 on Content Which.md",
+      "path": "Curiosity Lab/Spending $100 on Ads vs. $100 on Content Which/Spending $100 on Ads vs. $100 on Content Which.md",
       "file_name": "Spending $100 on Ads vs. $100 on Content Which.md",
       "bytes": 1064,
       "sha256": "c9acefdd6daa174b29e5aea65b0aaa39de57888b7f2d531f9e38fcfbb9fa91a5",
@@ -2081,27 +2135,81 @@
   {
     "title": "We keep arguing in the studio about product phot",
     "name": "we-keep-arguing-in-the-studio-about-product-phot",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/We keep arguing in the studio about product phot/We keep arguing in the studio about product phot.png",
+      "path": "Curiosity Lab/We keep arguing in the studio about product phot/We keep arguing in the studio about product phot.png",
       "file_name": "We keep arguing in the studio about product phot.png",
       "bytes": 2289647,
       "sha256": "94af377dbfd83eabec3c8a733756ad14983fc61a6f04d8156e935a0a7e287919",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/We keep arguing in the studio about product phot/We keep arguing in the studio about product phot.science",
+      "path": "Curiosity Lab/We keep arguing in the studio about product phot/We keep arguing in the studio about product phot.science",
       "file_name": "We keep arguing in the studio about product phot.science",
       "bytes": 9087,
       "sha256": "c75606d6e4f90205607c7efed523f59e41653da62b70621e711d6c1911b912c6",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/We keep arguing in the studio about product phot/We keep arguing in the studio about product phot.md",
+      "path": "Curiosity Lab/We keep arguing in the studio about product phot/We keep arguing in the studio about product phot.md",
       "file_name": "We keep arguing in the studio about product phot.md",
       "bytes": 1086,
       "sha256": "2fbf1448e15abd5b2d2ee20a5e8c8bbcf30a17f5127901b886c7272e3739f7e3",
+      "release_url": ""
+    }
+  },
+  {
+    "title": "What Follows a Bitcoin Surge?",
+    "name": "what-follows-a-bitcoin-surge",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
+    "cover": {
+      "path": "Curiosity Lab/What Follows a Bitcoin Surge?/What Follows a Bitcoin Surge?.png",
+      "file_name": "What Follows a Bitcoin Surge?.png",
+      "bytes": 2617269,
+      "sha256": "679dec2f6092e3047c7eebcc8581cd493d902ee297ca027a482d3ff72e7a8907",
+      "release_url": ""
+    },
+    "case": {
+      "path": "Curiosity Lab/What Follows a Bitcoin Surge?/What Follows a Bitcoin Surge?.science",
+      "file_name": "What Follows a Bitcoin Surge?.science",
+      "bytes": 1980331,
+      "sha256": "6a5fcffb044e786251309de8f9b1ffc7469a8d507c2a10f4b107230b70be657c",
+      "release_url": "https://huggingface.co/datasets/AIPOCH-AI/open-science-usecases/resolve/5608f9845e54550f67d861e87b6b9735da864d5d/Curiosity%20Lab/What%20Follows%20a%20Bitcoin%20Surge%3F/What%20Follows%20a%20Bitcoin%20Surge%3F.science"
+    },
+    "introduction": {
+      "path": "Curiosity Lab/What Follows a Bitcoin Surge?/What Follows a Bitcoin Surge?.md",
+      "file_name": "What Follows a Bitcoin Surge?.md",
+      "bytes": 1374,
+      "sha256": "f0fac81e27c042322a8b0726ac471f995a7fe58a629009a77d55f606fdfaa764",
+      "release_url": ""
+    }
+  },
+  {
+    "title": "What Happens If You Remove 1% of the Nodes from the Fruit Fly Brain Network?",
+    "name": "what-happens-if-you-remove-1-of-the-nodes-from-the-fruit-fly-brain-network",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
+    "cover": {
+      "path": "Curiosity Lab/What Happens If You Remove 1% of the Nodes from the Fruit Fly Brain Network?/What Happens If You Remove 1% of the Nodes from the Fruit Fly Brain Network?.png",
+      "file_name": "What Happens If You Remove 1% of the Nodes from the Fruit Fly Brain Network?.png",
+      "bytes": 2693785,
+      "sha256": "649d3e58520382c28e8a13fe04d573d034e774374a0279ab2057b4048717700a",
+      "release_url": ""
+    },
+    "case": {
+      "path": "Curiosity Lab/What Happens If You Remove 1% of the Nodes from the Fruit Fly Brain Network?/What Happens If You Remove 1% of the Nodes from the Fruit Fly Brain Network?.science",
+      "file_name": "What Happens If You Remove 1% of the Nodes from the Fruit Fly Brain Network?.science",
+      "bytes": 559473817,
+      "sha256": "2db4e3a21f365482c0bde927cddda0325e2d90f0a493edc5d4880122ed08e353",
+      "release_url": "https://huggingface.co/datasets/AIPOCH-AI/open-science-usecases/resolve/5608f9845e54550f67d861e87b6b9735da864d5d/Curiosity%20Lab/What%20Happens%20If%20You%20Remove%201%25%20of%20the%20Nodes%20from%20the%20Fruit%20Fly%20Brain%20Network%3F/What%20Happens%20If%20You%20Remove%201%25%20of%20the%20Nodes%20from%20the%20Fruit%20Fly%20Brain%20Network%3F.science"
+    },
+    "introduction": {
+      "path": "Curiosity Lab/What Happens If You Remove 1% of the Nodes from the Fruit Fly Brain Network?/What Happens If You Remove 1% of the Nodes from the Fruit Fly Brain Network?.md",
+      "file_name": "What Happens If You Remove 1% of the Nodes from the Fruit Fly Brain Network?.md",
+      "bytes": 1702,
+      "sha256": "425d6807a35bae22d73935d15b145e086504ec50435446859c8d8d8955f592c7",
       "release_url": ""
     }
   },
@@ -2135,24 +2243,24 @@
   {
     "title": "which deal is actually cheaper",
     "name": "which-deal-is-actually-cheaper",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/which deal is actually cheaper/which deal is actually cheaper.png",
+      "path": "Curiosity Lab/which deal is actually cheaper/which deal is actually cheaper.png",
       "file_name": "which deal is actually cheaper.png",
       "bytes": 2441727,
       "sha256": "f313d7fe92a767459863cc306b9e130ba25d87ec57ab6b5aa9c22884faf49604",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/which deal is actually cheaper/which deal is actually cheaper.science",
+      "path": "Curiosity Lab/which deal is actually cheaper/which deal is actually cheaper.science",
       "file_name": "which deal is actually cheaper.science",
       "bytes": 270970,
       "sha256": "37f3de88dfcb906ac2c766b9a6829a41da420f5723edbeaddde6940906e63aad",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/which deal is actually cheaper/which deal is actually cheaper.md",
+      "path": "Curiosity Lab/which deal is actually cheaper/which deal is actually cheaper.md",
       "file_name": "which deal is actually cheaper.md",
       "bytes": 970,
       "sha256": "ad7a805843a3191bfbba2625004c0f2333075193d45f0e7ae03a60ca2e8834e9",
@@ -2162,24 +2270,24 @@
   {
     "title": "Which Planet Is Most Like Earth—and Who Decides",
     "name": "which-planet-is-most-like-earth-and-who-decides",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Which Planet Is Most Like Earth—and Who Decides/Which Planet Is Most Like Earth—and Who Decides.png",
+      "path": "Curiosity Lab/Which Planet Is Most Like Earth—and Who Decides/Which Planet Is Most Like Earth—and Who Decides.png",
       "file_name": "Which Planet Is Most Like Earth—and Who Decides.png",
       "bytes": 2556612,
       "sha256": "b9705598cb95da7626d35a9a4c86f822eff5b863628ede38eb544e5e7388867a",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Which Planet Is Most Like Earth—and Who Decides/Which Planet Is Most Like Earth—and Who Decides.science",
+      "path": "Curiosity Lab/Which Planet Is Most Like Earth—and Who Decides/Which Planet Is Most Like Earth—and Who Decides.science",
       "file_name": "Which Planet Is Most Like Earth—and Who Decides.science",
       "bytes": 12658199,
       "sha256": "784d666fe41c780bb691eb7e01ff995028e051ce4f955dd056ce7572dc58b1b7",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Which Planet Is Most Like Earth—and Who Decides/Which Planet Is Most Like Earth—and Who Decides.md",
+      "path": "Curiosity Lab/Which Planet Is Most Like Earth—and Who Decides/Which Planet Is Most Like Earth—and Who Decides.md",
       "file_name": "Which Planet Is Most Like Earth—and Who Decides.md",
       "bytes": 774,
       "sha256": "6ab4942985dcc183497d14aa93a9278afc5275c19894254cc35a8ca39f2b02ae",
@@ -2189,24 +2297,24 @@
   {
     "title": "Why Do Coffee and Sleep Studies Disagree",
     "name": "why-do-coffee-and-sleep-studies-disagree",
-    "catalog": "",
-    "catalog_name": "",
+    "catalog": "Curiosity Lab",
+    "catalog_name": "curiosity-lab",
     "cover": {
-      "path": "usecases/Why Do Coffee and Sleep Studies Disagree/Why Do Coffee and Sleep Studies Disagree.png",
+      "path": "Curiosity Lab/Why Do Coffee and Sleep Studies Disagree/Why Do Coffee and Sleep Studies Disagree.png",
       "file_name": "Why Do Coffee and Sleep Studies Disagree.png",
       "bytes": 2477457,
       "sha256": "f64a756e17c37c2194cb8766fae32fd997fee3d7ecc287aac95e4d657776106f",
       "release_url": ""
     },
     "case": {
-      "path": "usecases/Why Do Coffee and Sleep Studies Disagree/Why Do Coffee and Sleep Studies Disagree.science",
+      "path": "Curiosity Lab/Why Do Coffee and Sleep Studies Disagree/Why Do Coffee and Sleep Studies Disagree.science",
       "file_name": "Why Do Coffee and Sleep Studies Disagree.science",
       "bytes": 121972,
       "sha256": "e87a4937bdfb7e1d6ed8b2a48d7ae3012e010e98b829b807026d413cb1e9fa21",
       "release_url": ""
     },
     "introduction": {
-      "path": "usecases/Why Do Coffee and Sleep Studies Disagree/Why Do Coffee and Sleep Studies Disagree.md",
+      "path": "Curiosity Lab/Why Do Coffee and Sleep Studies Disagree/Why Do Coffee and Sleep Studies Disagree.md",
       "file_name": "Why Do Coffee and Sleep Studies Disagree.md",
       "bytes": 5573,
       "sha256": "304006a3ad0de43be54cac5428408889878a68b9bc802ddc696999f0712160a9",
