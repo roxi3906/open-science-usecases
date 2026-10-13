@@ -244,7 +244,7 @@ class PublicationBoundaryTests(GitFixture):
         self.assertTrue(all(s['status'] == 'completed' for s in self.status()))
         self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
 
-    def test_cdn_request_and_wait_failures_resume_via_final_sync(self):
+    def test_cdn_failure_retry_refreshes_only_manifest_without_global_repair(self):
         self.change()
         for operation in ('create-invalidation', 'wait'):
             with self.subTest(operation=operation):
@@ -258,8 +258,14 @@ class PublicationBoundaryTests(GitFixture):
                 self.assertEqual(self.status()[1]['status'], 'waiting')
                 plan = self.prepare_run()
                 self.assertEqual([s['operation'] for s in plan['steps']], ['FINAL_SYNC'])
+                start = len(self.calls())
                 self.apply_run()
                 self.assertEqual(self.status()[0]['cdn'], 'completed')
+                retry = self.calls()[start:]
+                invalidations = [c for c in retry if c[:2] == ['cloudfront', 'create-invalidation']]
+                self.assertEqual([c[c.index('--paths') + 1:] for c in invalidations],
+                                 [['/cases/manifest.json']])
+                self.assertFalse(any(c[0] == 's3' for c in retry))
 
     def test_final_sync_failure_restarts_with_only_final_sync(self):
         self.change(); self.prepare_run()
@@ -302,13 +308,13 @@ class PublicationBoundaryTests(GitFixture):
             self.assertLess(phases.index(('manifest', 'completed')), phases.index(('cdn', 'uploading')))
             self.assertEqual(phases[-1], ('step', 'completed'))
 
-    def test_changed_case_invalidates_resources_and_final_sync_repairs_prior_cdn_failure(self):
+    def test_changed_case_invalidates_resources_and_final_sync_only_manifest(self):
         self.change(); self.prepare_run(); self.apply_run()
         invalidations = [c for c in self.calls() if c[:2] == ['cloudfront', 'create-invalidation']]
         self.assertEqual(invalidations[0][invalidations[0].index('--paths') + 1:],
                          ['/cases/manifest.json', '/cases/a-case/*'])
-        # The unconditional final step also repairs resource caches from earlier failed runs.
-        self.assertEqual(invalidations[-1][invalidations[-1].index('--paths') + 1:], ['/cases/*'])
+        self.assertEqual(len(invalidations), 2)
+        self.assertEqual(invalidations[-1][invalidations[-1].index('--paths') + 1:], ['/cases/manifest.json'])
 
     def test_acknowledged_put_with_failed_readback_records_commit(self):
         self.change(); self.prepare_run()
@@ -327,3 +333,54 @@ class PublicationBoundaryTests(GitFixture):
         self.assertIsNone(self.status()[0]['manifest_committed'])
         self.assertFalse(self.status()[0]['manifest_verified'])
         self.assertEqual(self.status()[1]['status'], 'waiting')
+
+    def test_unchanged_final_sync_preserves_resource_cache_and_exact_manifest(self):
+        plan = self.prepare_run(); self.apply_run()
+        self.assertEqual([s['operation'] for s in plan['steps']], ['FINAL_SYNC'])
+        calls = self.calls()
+        self.assertFalse(any(c[0] == 's3' for c in calls))
+        invalidations = [c for c in calls if c[:2] == ['cloudfront', 'create-invalidation']]
+        self.assertEqual([c[c.index('--paths') + 1:] for c in invalidations],
+                         [['/cases/manifest.json']])
+        self.assertEqual(sum(c[:2] == ['s3api', 'put-object'] for c in calls), 1)
+        self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
+
+    def test_path_only_migration_invalidates_only_manifest_at_each_checkpoint(self):
+        resource = self.entry['cover']
+        target = self.root / 'covers' / resource['file_name']
+        target.parent.mkdir()
+        (self.root / resource['path']).rename(target)
+        resource['path'] = target.relative_to(self.root).as_posix()
+        self.write_manifest(); self.commit()
+        plan = self.prepare_run(); self.apply_run()
+        self.assertEqual(plan['candidates'], [])
+        self.assertEqual(plan['packages'], [])
+        self.assertEqual([s['operation'] for s in plan['steps']], ['UPDATE_CASE', 'FINAL_SYNC'])
+        calls = self.calls()
+        self.assertFalse(any(c[0] == 's3' for c in calls))
+        invalidations = [c for c in calls if c[:2] == ['cloudfront', 'create-invalidation']]
+        self.assertEqual([c[c.index('--paths') + 1:] for c in invalidations],
+                         [['/cases/manifest.json'], ['/cases/manifest.json']])
+        self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
+
+    def test_each_case_finishes_upload_manifest_and_cdn_before_the_next_case(self):
+        second = self.add_case('B Case', 'b-case')
+        self.write_manifest(); self.commit()
+        (self.target / 'manifest.json').write_text(json.dumps(self.entries))
+        self.change()
+        self.entry = second; self.change()
+        self.prepare_run(); self.apply_run()
+        calls = self.calls()
+        # Keep only writes and CDN operations to prove the complete per-case sequence.
+        operations = [tuple(c[:2]) for c in calls if tuple(c[:2]) in (
+            ('s3', 'cp'), ('s3api', 'put-object'),
+            ('cloudfront', 'create-invalidation'), ('cloudfront', 'wait'))]
+        checkpoint = [('s3api', 'put-object'), ('cloudfront', 'create-invalidation'), ('cloudfront', 'wait')]
+        self.assertEqual(operations, ([('s3', 'cp')] + checkpoint) * 2 + checkpoint)
+        invalidations = [c for c in calls if c[:2] == ['cloudfront', 'create-invalidation']]
+        self.assertEqual([c[c.index('--paths') + 1:] for c in invalidations], [
+            ['/cases/manifest.json', '/cases/a-case/*'],
+            ['/cases/manifest.json', '/cases/b-case/*'],
+            ['/cases/manifest.json'],
+        ])
+        self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
