@@ -142,6 +142,80 @@ class PublicationBoundaryTests(GitFixture):
     def status(self):
         return json.loads((self.root / 'plan/status.json').read_text())['steps']
 
+    def prepare_catalog_package_updates(self):
+        import hashlib
+        from test_extract_science import package_bytes
+        import extract_science
+
+        self.add_case('B Case', 'b-case')
+        baseline = copy.deepcopy(self.entries)
+        old_package = package_bytes(storage_key='uploads/old')
+        new_package = package_bytes(storage_key='uploads/new')
+        # Seed real old archives and extracted objects to detect destructive ordering.
+        for previous, entry in zip(baseline, self.entries):
+            previous.update(catalog='Data Science', catalog_name='data-science')
+            entry.update(catalog='DataScience', catalog_name='data-science')
+            for kind in publisher.KINDS:
+                resource = entry[kind]
+                previous[kind]['path'] = 'Data Science/' + entry['name'] + '/' + resource['file_name']
+                target = self.root / 'DataScience' / entry['name'] / resource['file_name']
+                target.parent.mkdir(parents=True, exist_ok=True)
+                (self.root / resource['path']).rename(target)
+                resource['path'] = target.relative_to(self.root).as_posix()
+                if kind == 'case':
+                    target.write_bytes(new_package)
+                    resource.update(bytes=len(new_package), sha256=hashlib.sha256(new_package).hexdigest())
+                    previous[kind].update(bytes=len(old_package), sha256=hashlib.sha256(old_package).hexdigest())
+                    remote = self.target / entry['name'] / resource['file_name']
+                    remote.parent.mkdir(parents=True, exist_ok=True)
+                    remote.write_bytes(old_package)
+                    (remote.parent / 'extracted').mkdir()
+                    extract_science.unpack(remote, remote.parent / 'extracted')
+        self.write_manifest(); self.commit()
+        self.baseline = json.dumps(baseline)
+        (self.target / 'manifest.json').write_text(self.baseline)
+        plan = self.prepare_run()
+        self.assertEqual([s['operation'] for s in plan['steps']], ['UPDATE_CATALOG', 'FINAL_SYNC'])
+        result = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'extract_science.py'),
+                                 '--plan', str(self.plan_file), '--output', str(self.root / 'staging')],
+                                cwd=self.root, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_catalog_group_failure_preserves_later_case_resources(self):
+        self.prepare_catalog_package_updates()
+        later = self.target / 'b-case'
+        original = {p.relative_to(later): p.read_bytes() for p in later.rglob('*') if p.is_file()}
+        for failure in ({'FAKE_S3_FAIL': 'cp'}, {'FAKE_S3_BAD_HEAD': '1'}):
+            with self.subTest(failure=failure):
+                start = len(self.calls())
+                self.apply_run(overrides=failure, success=False)
+                self.assertEqual({p.relative_to(later): p.read_bytes()
+                                  for p in later.rglob('*') if p.is_file()}, original)
+                self.assertEqual((self.target / 'manifest.json').read_text(), self.baseline)
+                calls = self.calls()[start:]
+                self.assertEqual([c[2] for c in calls if c[:2] == ['s3', 'rm']],
+                                 ['s3://bucket/cases/a-case/extracted/'])
+                self.assertFalse(any(c[:2] == ['s3api', 'put-object'] for c in calls))
+
+    def test_catalog_group_finishes_case_uploads_and_checks_before_clearing_next(self):
+        self.prepare_catalog_package_updates()
+        start = len(self.calls())
+        self.apply_run()
+        calls = self.calls()[start:]
+        clear_a, clear_b = [i for i, c in enumerate(calls) if c[:2] == ['s3', 'rm']]
+        commit = next(i for i, c in enumerate(calls) if c[:2] == ['s3api', 'put-object'])
+        for begin, end, name in ((clear_a, clear_b, 'a-case'), (clear_b, commit, 'b-case')):
+            uploads = [c[3] for c in calls[begin + 1:end] if c[:2] == ['s3', 'cp']]
+            checks = [c[c.index('--key') + 1] for c in calls[begin + 1:end]
+                      if c[:2] == ['s3api', 'head-object']]
+            self.assertIn('s3://bucket/cases/' + name + '/extracted/session.json', uploads)
+            self.assertTrue(all(key.startswith('s3://bucket/cases/' + name + '/') for key in uploads))
+            self.assertEqual(checks, [key.removeprefix('s3://bucket/') for key in uploads])
+            self.assertFalse((self.target / name / 'extracted/uploads/old').exists())
+            self.assertEqual((self.target / name / 'extracted/uploads/new').read_bytes(), b'<svg>fixture</svg>')
+        self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
+        self.assertTrue(all(f['status'] == 'completed' for s in self.status() for f in s['files']))
+
     def test_catalog_group_invalidates_only_cases_with_uploaded_resources(self):
         import hashlib
         self.add_case('B Case', 'b-case')
