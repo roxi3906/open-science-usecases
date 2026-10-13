@@ -2,10 +2,10 @@
 
 本仓库收集完成的 Open-Science 会话导出、封面和介绍，根 `manifest.json` 是案例索引。
 
-案例统一放在 `usecases/<目录>/`。每个条目包含 `title`、唯一 kebab-case `name`，以及 `cover`、`case`、`introduction` 三种资源；每种资源都提供 `file_name`、`path`、`bytes`、`sha256`、`release_url`。URL 为空时采用本地文件，非空时采用远程资源；全远程条目可不创建本地目录，但仍保留规范 path。
+现有案例放在 `usecases/`，后续可按分类扩展目录层级，也可使用其他目录。校验和发布直接按各资源的 `path` 定位，不强制目录前缀、层级或三个资源共用目录。每个条目包含 `title`、唯一 kebab-case `name`，以及 `cover`、`case`、`introduction` 三种资源；每种资源都提供 `file_name`、`path`、`bytes`、`sha256`、`release_url`。URL 为空时采用本地文件，非空时采用远程资源；全远程条目可不创建本地目录，但仍保留规范 path。
 
 ```text
-usecases/示例目录/
+usecases/物理/示例目录/
   cover.png
   session.science
   introduction.md

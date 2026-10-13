@@ -143,10 +143,10 @@ def prepare_resources(root, plan, s3, output):
                 download(item['release_url'], target, item)
             else:
                 # Bind local input to the fixed Git tree as well as the declared digest.
-                listing = git(root, 'ls-tree', plan['after'], '--', item['path']).split()
+                listing = git(root, '--literal-pathspecs', 'ls-tree', plan['after'], '--', item['path']).split()
                 if not listing or listing[0] not in ('100644', '100755'):
                     raise ValueError('Local source must be a committed regular file: ' + item['path'])
-                subprocess.run(['git', 'diff', '--quiet', plan['after'], '--', item['path']],
+                subprocess.run(['git', '--literal-pathspecs', 'diff', '--quiet', plan['after'], '--', item['path']],
                                cwd=root, check=True)
                 shutil.copyfile(root / item['path'], target)
             if file_integrity(target) != (item['bytes'], item['sha256']):

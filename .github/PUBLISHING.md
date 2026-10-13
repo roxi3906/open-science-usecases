@@ -27,6 +27,8 @@ S3 键始终由 `name` 和 `file_name` 决定，不采用仓库 `path`：
 <AWS_TARGET_FOLDER>/manifest.json
 ```
 
+源文件只按各资源声明的仓库相对 `path` 定位，支持分类目录、任意层级及三个资源分开放置，不要求 `usecases/` 前缀。本地文件及各级父目录仍需通过安全检查。分类或路径调整仅更新索引，不改变 S3 键。
+
 ## 候选与去重
 
 仅候选清单内、未强制上传的封面和介绍执行目标 S3 `HeadObject`。目标 `Metadata.sha256` 和 `ContentLength` 都匹配才跳过上传。缺对象、缺 metadata、SHA 或大小不匹配都准备并上传。403、网络和其他错误失败，不冒充缺对象；HeadObject 的明确 404/NoSuchKey/NotFound 才表示缺对象。

@@ -88,17 +88,13 @@ def is_science_url(url):
     return is_resource_url(url, "case")
 
 
-def resource_directory(resource, legacy=False):
+def validate_resource_path(resource):
     path, filename = resource.get("path"), resource.get("file_name")
     if (not isinstance(path, str) or re.search(r"[\x00-\x1f\x7f\\]", path)
+            or re.match(r"^[A-Za-z]:", path)
             or any(part in ("", ".", "..") for part in path.split("/"))
             or not isinstance(filename, str) or filename != path.split("/")[-1]):
         raise ValueError("invalid resource path or file_name")
-    parts = path.split("/")
-    if not (len(parts) == 3 and parts[0] == "usecases"):
-        if not (legacy and len(parts) == 2):
-            raise ValueError("path must be usecases/<directory>/<file_name>")
-    return "/".join(parts[:-1])
 
 
 def schema_errors(entry, legacy=False):
@@ -111,7 +107,6 @@ def schema_errors(entry, legacy=False):
         errors.append(label + ": title must be a nonempty string")
     if not isinstance(entry["name"], str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", entry["name"]):
         errors.append(label + ": name must be kebab-case")
-    folders = set()
     destinations = set()
     for kind in ("cover", "case", "introduction"):
         if kind not in entry:
@@ -123,7 +118,7 @@ def schema_errors(entry, legacy=False):
         if not require_keys(resource, keys, label + "/" + kind, errors, optional=("release_url",)):
             continue
         try:
-            folders.add(resource_directory(resource, legacy))
+            validate_resource_path(resource)
         except ValueError as error:
             errors.append(label + ": " + str(error))
         filename = resource["file_name"]
@@ -141,8 +136,6 @@ def schema_errors(entry, legacy=False):
         url = resource.get("release_url", "")
         if url != "" and not is_resource_url(url, kind):
             errors.append(label + "/" + kind + ": invalid release_url")
-    if len(folders) != 1:
-        errors.append(label + ": resources must share one case directory")
     return errors
 
 
@@ -151,16 +144,21 @@ def source_errors(root, entry):
     if all(entry[kind]["release_url"] for kind in ("cover", "case", "introduction")):
         return []
     errors = []
-    directory = resource_directory(entry["cover"])
-    folder = root / directory
-    if not folder.is_dir() or any(p.is_symlink() for p in (root / "usecases", folder)):
-        return ["Missing or invalid case directory: " + directory]
     for kind in ("cover", "case", "introduction"):
         resource = entry[kind]
         path = root / resource["path"]
-        if resource["release_url"]:
-            if kind == "case" and (path.exists() or path.is_symlink()):
+        # Resolve each resource independently; classification folders are not schema.
+        if resource["release_url"] and kind != "case":
+            continue
+        parts = resource["path"].split("/")
+        parents = [root.joinpath(*parts[:length]) for length in range(1, len(parts))]
+        if any(parent.is_symlink() for parent in parents):
+            errors.append("Invalid resource directory (symlink): " + resource["path"])
+        elif resource["release_url"]:
+            if path.exists() or path.is_symlink():
                 errors.append("Package requires exactly one source: " + resource["path"])
+        elif any(not parent.is_dir() for parent in parents):
+            errors.append("Missing or invalid resource directory: " + resource["path"])
         elif not regular_file(path):
             errors.append("Local resource must be a regular file (missing or symlink): " + resource["path"])
         elif path.stat().st_size != resource["bytes"]:
@@ -339,14 +337,14 @@ def check_declarations(root, before, after):
         if not isinstance(declaration, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", declaration):
             errors.append(f"{key}: sha256 must be a 64-digit hexadecimal declaration.")
             continue
-        listing = range_git(root, "ls-tree", after, "--", path).split()
+        listing = range_git(root, "--literal-pathspecs", "ls-tree", after, "--", path).split()
         if not listing or listing[0] not in ("100644", "100755"):
             errors.append(f"{key}: local resource must be a committed regular file.")
             continue
         if prior and (prior["path"] != path or path in changed):
             # A file-only batch may have removed this path without changing its
             # declaration. Restoring it has no prior regular-file object to compare.
-            old_listing = range_git(root, "ls-tree", before, "--", prior["path"]).split()
+            old_listing = range_git(root, "--literal-pathspecs", "ls-tree", before, "--", prior["path"]).split()
             if not old_listing or old_listing[0] not in ("100644", "100755"):
                 continue
             old_object, new_object = old_listing[2], listing[2]
