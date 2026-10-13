@@ -55,7 +55,9 @@ Each added or updated case commits its step's manifest only after completing its
 2. Upload the case's selected resources and extracted files. Write `sha256` metadata computed from the actual uploaded bytes, then verify the size and metadata with HEAD.
 3. Write the root manifest conditionally: use the `If-Match` ETag for an existing object, or `If-None-Match: *` for the first write.
 4. Read back the manifest and verify that its raw text matches. Wait for this step's CDN invalidation to finish before proceeding to the next step.
-5. Finally, `FINAL_SYNC` writes the manifest's original bytes from the fixed commit, reads it back, and invalidates the entire publication prefix.
+5. Finally, `FINAL_SYNC` writes the manifest's original bytes from the fixed commit as a separate step, reads it back, and invalidates only the manifest's CDN path.
+
+Steps that upload resources invalidate the manifest and the case's `<name>/*` path. Steps without resource uploads, including `FINAL_SYNC`, invalidate only the manifest. Every step still waits for invalidation to finish; the entire publication prefix is no longer invalidated.
 
 Removal, reordering, and index-only steps do not clean up resources. The trailing `/` in the cleanup prefix prevents accidental deletion of similarly named prefixes. Conditional conflicts fail without falling back to unconditional writes. Only an ambiguous transport failure permits a read-back check to determine whether PUT completed. ETag is used for version conditions, not as a content SHA.
 
@@ -67,7 +69,7 @@ The serial workflow lock covers the interval from reading the baseline through f
 
 Step status is `waiting`, `uploading`, `completed`, or `failed`, with separate records for manifest commitment, read-back verification, and CDN status. Any validation, preparation, extraction, deletion, upload, read-back, or CDN failure stops processing immediately. FINAL_SYNC is not run after a failure. If the process is terminated, status may remain `uploading`; recovery still uses S3 as the source of truth.
 
-For example, if the first two cases complete and the third uploads but fails to write the index, a new run reads the checkpoint containing the first two cases and processes only the remaining differences. The third case's cover and introduction may be deduplicated using target metadata, but source changes still force upload, and its package is prepared and extracted again. If the index was committed but CDN invalidation failed, the new run's FINAL_SYNC invalidates the entire prefix.
+For example, if the first two cases complete and the third uploads but fails to write the index, a new run reads the checkpoint containing the first two cases and processes only the remaining differences. The third case's cover and introduction may be deduplicated using target metadata, but source changes still force upload, and its package is prepared and extracted again. If the index was committed but CDN invalidation failed, the new run's `FINAL_SYNC` only retries invalidation of the manifest; it does not automatically invalidate resource caches for cases that were already committed. Use the failed run's CDN path logs to issue a separate invalidation for each affected case and confirm completion. If the request was accepted but waiting failed, first check the actual status of that invalidation request.
 
 After fixing the cause, start a new `workflow_dispatch` on main; do not use native Re-run jobs. The scripts and Action reject `GITHUB_RUN_ATTEMPT != 1`. Each new run uses a newly fixed SHA, fresh staging, and a fresh S3 baseline. Never reuse an old plan whose extraction has completed to retry extraction. The concurrency queue does not guarantee commit ancestry order; if an older target is published from the queue, dispatch the current main again afterward.
 
