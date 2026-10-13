@@ -19,6 +19,7 @@ class MigrationTests(GitFixture):
         baseline = copy.deepcopy(entries)
         resource_objects = {}
         for old, entry in zip(baseline, entries):
+            del old['catalog'], old['catalog_name']
             for kind in publisher.KINDS:
                 resource = entry[kind]
                 old[kind]['path'] = resource['path'].removeprefix('usecases/')

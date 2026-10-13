@@ -14,7 +14,7 @@ import sys
 import tempfile
 from urllib.parse import quote, urlsplit
 
-from check_structure import read_json, schema_errors, source_errors, selected_cases
+from check_structure import catalog_errors, read_json, schema_errors, source_errors, selected_cases
 from manifest_diff import changed_entries, git
 from publication_steps import (build_steps, group_files, write_artifacts, print_plan,
                                Reporter, digest)
@@ -37,6 +37,9 @@ def read_manifest(text, source, legacy=True):
         if entry['name'] in names:
             raise ValueError(source + ': Duplicate case name: ' + entry['name'])
         names.add(entry['name'])
+    errors = catalog_errors(entries, legacy=legacy)
+    if errors:
+        raise ValueError(source + ': ' + '; '.join(errors))
     return entries
 
 
@@ -378,7 +381,8 @@ def apply(root, plan, s3, output=None):
                 state['cdn'] = 'uploading'
                 reporter.event(step, phase, 'uploading')
                 s3.refresh_cdn(step['name'] if step['files'] else None,
-                               final=step['operation'] == 'FINAL_SYNC')
+                               final=(step['operation'] == 'FINAL_SYNC'
+                                      or step['operation'] == 'UPDATE_CATALOG' and bool(step['files'])))
                 state['cdn'] = 'completed'
                 state['status'] = 'completed'
                 reporter.event(step, 'step', 'completed')

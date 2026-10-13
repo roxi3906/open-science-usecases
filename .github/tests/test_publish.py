@@ -42,7 +42,7 @@ class GitFixture(unittest.TestCase):
         return self.git('rev-parse', 'HEAD')
 
     def add_case(self, title, name):
-        entry = {'title': title, 'name': name}
+        entry = {'title': title, 'name': name, 'catalog': '', 'catalog_name': ''}
         for kind, ext in [('cover', 'png'), ('case', 'science'), ('introduction', 'md')]:
             file = title + '.' + ext
             path = 'usecases/' + title + '/' + file

@@ -97,11 +97,48 @@ def validate_resource_path(resource):
         raise ValueError("invalid resource path or file_name")
 
 
+def catalog_errors(entries, legacy=False):
+    errors, catalogs = [], {}
+    for entry in entries:
+        label = "manifest.json / " + show(entry.get("name"))
+        if legacy and not {"catalog", "catalog_name"} & entry.keys():
+            continue
+        catalog, name = entry.get("catalog"), entry.get("catalog_name")
+        if not isinstance(catalog, str) or not isinstance(name, str):
+            errors.append(label + ": catalog and catalog_name must both be strings; use two empty strings for no classification")
+            continue
+        if catalog == name == "":
+            continue
+        if (not catalog.strip() or catalog in (".", "..")
+                or re.search(r"[\x00-\x1f\x7f/\\]", catalog) or re.match(r"^[A-Za-z]:", catalog)):
+            errors.append(label + ": catalog must be a nonempty, safe single directory name")
+            continue
+        if not catalog.isascii():
+            errors.append(label + ": catalog " + show(catalog)
+                          + " cannot be converted to ASCII kebab-case; rename it manually (no translation or character removal)")
+            continue
+        expected = kebab_case(catalog)
+        if not expected or name != expected:
+            errors.append(label + ": catalog_name must equal the nonempty kebab-case conversion of catalog "
+                          + show(catalog) + ": " + show(expected))
+            continue
+        if name in catalogs and catalogs[name] != catalog:
+            errors.append(label + ": catalog_name collision " + show(name) + " between "
+                          + show(catalogs[name]) + " and " + show(catalog) + "; rename one catalog")
+        catalogs[name] = catalog
+        for kind in ("cover", "case", "introduction"):
+            resource = entry.get(kind)
+            path = resource.get("path") if isinstance(resource, dict) else None
+            if not isinstance(path, str) or not path.startswith(catalog + "/"):
+                errors.append(label + "/" + kind + ": path must start with catalog directory " + show(catalog + "/"))
+    return errors
+
+
 def schema_errors(entry, legacy=False):
-    errors = []
+    errors = catalog_errors([entry], legacy=legacy)
     label = "manifest.json / " + show(entry.get("name"))
     required = {"title", "name", "cover", "case"} | (set() if legacy else {"introduction"})
-    if not require_keys(entry, required, label, errors, optional=("introduction",)):
+    if not require_keys(entry, required, label, errors, optional=("introduction", "catalog", "catalog_name")):
         return errors
     if not isinstance(entry["title"], str) or not entry["title"].strip():
         errors.append(label + ": title must be a nonempty string")
@@ -147,7 +184,7 @@ def source_errors(root, entry):
     for kind in ("cover", "case", "introduction"):
         resource = entry[kind]
         path = root / resource["path"]
-        # Resolve each resource independently; classification folders are not schema.
+        # Resource subdirectories remain independent within the classification.
         if resource["release_url"] and kind != "case":
             continue
         parts = resource["path"].split("/")
@@ -205,7 +242,7 @@ def directories(base, merge_base=False, new_branch_base=None):
         raise ValueError("Checkout manifest differs from HEAD")
     old = manifest_entries(git("show", base + ":manifest.json"), "baseline manifest.json") if base else []
     current = manifest_entries(text, "manifest.json")
-    return selected_cases(changed_entries(old, current)), []
+    return selected_cases(changed_entries(old, current)), catalog_errors(current)
 
 
 def unique_keys(pairs):
@@ -294,7 +331,9 @@ def validate_manifest(cases, declared_only=False):
     if not isinstance(cases, list) or any(not isinstance(case, dict) or "entry" not in case for case in cases):
         raise ValueError("CASES_JSON must contain selected entries from the directories step")
     manifest = manifest_entries(Path("manifest.json").read_text(encoding="utf-8"), "manifest.json")
-    errors = []
+    errors = catalog_errors(manifest)
+    if errors:
+        return errors
     for case in cases:
         entry = case["entry"]
         if entry not in manifest:

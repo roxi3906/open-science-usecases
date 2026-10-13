@@ -1,22 +1,26 @@
 # Case 校验
 
-校验入口是根 `manifest.json` 中新增或修改后仍存在的条目。仅资源文件变化、删除条目、排序或 JSON 排版变化不会主动扫描其他 case。全远程条目无需本地目录，也会被选中。`name` 在整个索引中唯一；标题和目录名可独立命名。
+资源校验入口是根 `manifest.json` 中新增或修改后仍存在的条目。仅资源文件变化、删除条目、排序或 JSON 排版变化不会主动扫描其他 case 的资源。分类字段及映射在整个目标 manifest 上检查，包括未改变的条目，避免增量检查漏掉与已有分类的冲突。全远程条目无需本地目录，也会被选中。`name` 在整个索引中唯一；标题和目录名可独立命名。
 
 ## 字段规则
 
-顶层是数组，每条包含 `title`、`name`、`cover`、`case`、`introduction`。三种资源使用同一结构：
+顶层是数组，每条包含 `title`、`name`、`catalog`、`catalog_name`、`cover`、`case`、`introduction`。两个分类字段必须都是字符串，同时为 `""` 表示无分类；不得省略、使用 null、仅空白或只填一个。
+
+非空 `catalog` 是展示名称及单层分类目录名。`catalog_name` 按 [AGENTS.md](../AGENTS.md) 转成 ASCII kebab-case，转换不一致、含非 ASCII 字符、结果为空或不同分类转换后撞名均报错，不做自动翻译、转写或编号。相同分类可以复用。非空分类的所有资源路径（包括远程来源）必须以原样的 `<catalog>/` 开头；其下仍允许任意层级和不同资源目录。分类名不能是路径穿越、分隔符、控制字符或盘符路径。
+
+三种资源使用同一结构：
 
 | 字段 | 要求 |
 | --- | --- |
 | `file_name` | 实际文件名，等于 `path` 最后一段 |
-| `path` | 安全的仓库相对路径；目录名、层级及前缀不限，三个资源可位于不同目录；远程也保留 |
+| `path` | 安全的仓库相对路径；有分类时以 `<catalog>/` 开头，其下层级不限、资源可分目录；无分类时前缀不限；远程也保留 |
 | `bytes` | 非负整数字节数；布尔值、字符串均不接受 |
 | `sha256` | 64 位十六进制，无空白；比较时忽略大小写 |
 | `release_url` | `""` 表示本地；非空表示有效 HTTP(S) 下载 URL，不能仅含空白 |
 
 封面扩展名须为图片类型；包为 `.science`；介绍为 `.md`。不接受重复 JSON 字段、缺失或未知字段、绝对路径、反斜杠、控制字符、空路径段和 `.` / `..`。Windows 盘符路径也不接受。新 manifest 必须显式提供三个 `release_url`；历史 S3 基线允许旧根目录路径，封面和介绍缺失 URL 时按空字符串比较。
 
-例如 `usecases/physics/optics/cover.png`、`packages/optics/session.science`、`introductions/zh/optics.md` 可属于同一条目；根目录文件也可直接使用文件名作为 path。`usecases/` 仅为现有案例的组织方式。
+例如分类 `Data Science` 下的 `Data Science/covers/cover.png`、`Data Science/packages/session.science`、`Data Science/docs/zh/intro.md` 可属于同一条目。无分类时根目录文件也可直接使用文件名作为 path；`usecases/` 仅为现有无分类案例的组织方式。
 
 ## 来源与检查
 
