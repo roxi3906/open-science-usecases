@@ -205,13 +205,13 @@ def unpack(package, output, verify_only=False):
         return verified
 
 
-def expand_plan(root, plan, output, *, names=None, check_local=True):
+def expand_plan(root, plan, output):
     if git(root, 'rev-parse', 'HEAD').strip() != plan['after']:
         raise ValueError('Checkout must match the prepared target commit')
     if plan.get('extraction_complete'):
         raise ValueError('Extraction requires a fresh, unprepared plan')
     from publish import verify_plan
-    verify_plan(root, plan, names=names, check_local=check_local)
+    verify_plan(root, plan)
     if plan.get('packages') and plan.get('resources_prepared') is not True:
         raise ValueError('Prepare all resources before extracting packages')
     result = copy.deepcopy(plan)
@@ -270,7 +270,7 @@ def main():
     result = expand_plan(Path.cwd(), plan, args.output.resolve())
     from publication_steps import write_artifacts, print_plan, Reporter
     write_artifacts(result, args.plan.with_suffix(''))
-    Reporter(result, args.plan.with_suffix(''))
+    Reporter(result, args.plan.with_suffix('')).close()
     print_plan(result)
     args.plan.write_text(json.dumps(result) + '\n', encoding='utf-8')
 

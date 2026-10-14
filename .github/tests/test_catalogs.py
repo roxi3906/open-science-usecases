@@ -179,6 +179,10 @@ class CatalogTests(GitFixture):
         self.assertEqual(retry['packages'], [])
         store.refresh_cdn = lambda *args, **kwargs: None
         with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(ValueError, 'pending postprocessing'):
+                publisher.apply(self.root, retry, store)
+            from publication_runtime import recover
+            recover(store, self.root / '.publication', root=self.root)
             publisher.apply(self.root, retry, store)
         self.assertEqual(store.manifest, (self.root/'manifest.json').read_text())
 
@@ -221,6 +225,6 @@ class CatalogTests(GitFixture):
             for kind in publisher.KINDS:
                 self.assertIn(entry['name']+'/'+entry[kind]['file_name'], store.writes[:first_commit])
             self.assertIn(entry['name']+'/extracted/session.json', store.writes[:first_commit])
-        self.assertCountEqual(clears, ['b-case', 'c-case'])
-        self.assertEqual(refreshes, ['b-case', 'c-case', None])
+        self.assertEqual(clears, [])
+        self.assertEqual(refreshes, ['b-case', 'c-case'])
         self.assertEqual(store.manifest, (self.root/'manifest.json').read_text())

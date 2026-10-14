@@ -189,13 +189,13 @@ class ExtractionTests(GitFixture):
             if baseline is not None:
                 (s3 / 'bucket/cases/manifest.json').write_text(baseline)
         env = {**os.environ, 'PATH': str(fake) + os.pathsep + os.environ['PATH'],
-               'FAKE_S3_ROOT': str(s3), 'AWS_TARGET_FOLDER': 's3://bucket/cases',
+               'PYTHONPATH': str(Path(__file__).parent / 'sdk_boundary') + os.pathsep + str(Path(__file__).parent), 'FAKE_S3_ROOT': str(s3), 'AWS_TARGET_FOLDER': 's3://bucket/cases',
                'AWS_DISTRIBUITION_ID': 'test-distribution'}
         return s3, env
 
     def publish(self, env):
         return subprocess.run(
-            [sys.executable, '-B', str(Path(__file__).with_name('fake_publish.py')), '--apply-plan', str(self.plan_file)],
+            [sys.executable, '-B', str(SCRIPTS / 'publish.py'), '--apply-plan', str(self.plan_file)],
             cwd=self.root, env=env, text=True, capture_output=True)
 
     def test_repository_package_uses_fresh_output_and_preserves_existing_directories(self):
@@ -239,8 +239,9 @@ class ExtractionTests(GitFixture):
         self.assertIn('a-case/extracted/artifacts/project/session/.provenance/version/content',
                       [item['key'] for item in plan['files']])
         calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
-        self.assertEqual(next(c for c in calls if c[:2] == ['s3', 'rm']), ['s3', 'rm', 's3://bucket/cases/a-case/extracted/',
-                                   '--recursive', '--only-show-errors'])
+        self.assertFalse(any(c[:2] == ['s3', 'rm'] for c in calls))
+        deleted = [key for c in calls if c[:2] == ['s3api', 'delete-objects'] for key in c[3:]]
+        self.assertCountEqual(deleted, ['cases/a-case/extracted/stale.txt', 'cases/a-case/extracted/.hidden/old'])
         self.assertEqual(calls[-1][:3], ['cloudfront', 'wait', 'invalidation-completed'])
         metadata = json.loads((s3 / 'metadata.json').read_text())
         for path in (target / 'a-case/extracted').rglob('*'):
@@ -300,9 +301,9 @@ class ExtractionTests(GitFixture):
     def test_delete_or_upload_failure_never_publishes_manifest(self):
         self.declare(remote=True); self.extract()
         s3, env = self.s3_fixture()
-        for operation in ['rm', 'cp']:
+        for operation in ['delete', 'cp']:
             with self.subTest(operation=operation):
-                result = self.publish({**env, 'FAKE_S3_FAIL': operation})
+                result = self.publish({**env, **({'FAKE_S3_DELETE_ERROR': '1'} if operation == 'delete' else {'FAKE_S3_FAIL': 'cp'})})
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual((s3 / 'bucket/cases/manifest.json').read_text(),
                                  json.loads(self.plan_file.read_text())['baseline'])
@@ -353,14 +354,13 @@ class ExtractionTests(GitFixture):
             count += 1
             command = command.group(1).replace('python3 .github/scripts/',
                                                shlex.quote(sys.executable) + ' -B ' + str(SCRIPTS) + '/')
-            command = command.replace(str(SCRIPTS / 'publish.py'), str(Path(__file__).with_name('fake_publish.py')))
             gate = re.search(r"^        if: steps.plan.outputs.(\w+) == 'true'$", step, re.M)
             if gate:
                 commands.extend(['if grep -qx ' + shlex.quote(gate.group(1)+'=true') + ' "$GITHUB_OUTPUT"; then',
                                  command, 'fi'])
             else:
                 commands.append(command)
-        self.assertEqual(count, 2)
+        self.assertEqual(count, 5)
         output = self.root / '.git/workflow-output'
         output.write_text('')
         return subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', '\n'.join(commands)], cwd=self.root,
@@ -397,7 +397,7 @@ class ExtractionTests(GitFixture):
         self.assertTrue((target / 'a-case/A Case.science').is_file())
         self.assertTrue((target / 'a-case/extracted/session.json').is_file())
         calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
-        self.assertEqual(sum(c[:2] == ['s3api', 'put-object'] for c in calls), 2)
+        self.assertEqual(sum(c[:2] == ['s3api', 'put-object'] for c in calls), 1)
         self.assertFalse(any(c[:2] in (['s3', 'cp'], ['s3', 'rm']) for c in calls))
 
     def test_workflow_source_or_head_failure_prevents_download_and_s3_writes(self):
@@ -430,13 +430,13 @@ class ExtractionTests(GitFixture):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((target / 'manifest.json').read_bytes(), prior)
         calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
-        self.assertEqual([call[:2] for call in calls],
-                         [['s3api', 'get-object'], ['s3api', 'get-object'], ['s3', 'rm'], ['s3', 'cp']])
+        self.assertTrue(any(c[:2] == ['s3', 'cp'] for c in calls))
+        self.assertTrue(all(c[:2] in (['s3api', 'get-object'], ['s3', 'cp']) for c in calls))
         # A new run plans against the unchanged S3 index and retries replacement.
         result = self.pipeline(env)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((target / 'a-case/extracted/uploads/replacement').is_file())
-        self.assertFalse((target / 'a-case/extracted/artifacts').exists())
+        self.assertFalse(any(p.is_file() for p in (target / 'a-case/extracted/artifacts').rglob('*')))
         self.assertNotEqual((target / 'manifest.json').read_bytes(), prior)
 
     def test_workflow_invalid_or_unreadable_baseline_stops_before_processing(self):
@@ -453,7 +453,7 @@ class ExtractionTests(GitFixture):
         calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
         self.assertTrue(all(call[:2] == ['s3api', 'get-object'] for call in calls))
 
-    def test_first_publication_commits_each_case_before_touching_the_next(self):
+    def test_first_publication_commits_two_complete_cases_in_one_batch(self):
         from urllib.parse import quote
         self.add_case('B Case', 'b-case')
         for entry in self.entries:
@@ -471,21 +471,14 @@ class ExtractionTests(GitFixture):
         result = self.pipeline(env)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         checkpoints = [json.loads(line) for line in (s3 / 'manifests.jsonl').read_text().splitlines()]
-        self.assertEqual([[e['name'] for e in m] for m in checkpoints],
-                         [['b-case'], ['a-case', 'b-case'], ['a-case', 'b-case']])
+        self.assertEqual([[e['name'] for e in m] for m in checkpoints], [['a-case', 'b-case']])
         calls = [json.loads(line) for line in (s3 / 'calls.jsonl').read_text().splitlines()]
-        puts = [i for i, call in enumerate(calls) if call[:2] == ['s3api', 'put-object']]
-        clear_b = next(i for i, c in enumerate(calls) if c[:2] == ['s3', 'rm'] and '/b-case/' in c[2])
-        clear_a = next(i for i, c in enumerate(calls) if c[:2] == ['s3', 'rm'] and '/a-case/' in c[2])
-        self.assertLess(clear_b, puts[0]); self.assertLess(puts[0], clear_a)
-        self.assertLess(clear_a, puts[1])
-        for begin, end, name in ((clear_b, puts[0], 'b-case'), (clear_a, puts[1], 'a-case')):
-            uploads = [c[3] for c in calls[begin:end] if c[:2] == ['s3', 'cp']]
-            self.assertTrue(all('/' + name + '/' in key for key in uploads))
-            self.assertTrue(any(key.endswith('/extracted/session.json') for key in uploads))
-        waits = [i for i, c in enumerate(calls) if c[:2] == ['cloudfront', 'wait']]
-        self.assertEqual(len(waits), 3)
-        self.assertLess(waits[0], clear_a)
+        put = next(i for i, call in enumerate(calls) if call[:2] == ['s3api', 'put-object'])
+        for name in ('a-case', 'b-case'):
+            self.assertTrue(any(c[:2] == ['s3', 'cp'] and c[3].endswith('/' + name + '/extracted/session.json')
+                                for c in calls[:put]))
+        self.assertFalse(any(c[:2] == ['s3', 'rm'] for c in calls))
+        self.assertEqual(sum(c[:2] == ['cloudfront', 'wait'] for c in calls), 1)
         self.assertEqual((s3 / 'bucket/cases/manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
 
     def test_workflow_path_only_migration_publishes_manifest_with_empty_resource_gates(self):
@@ -506,7 +499,7 @@ class ExtractionTests(GitFixture):
         self.assertEqual((target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
         calls = [json.loads(line) for line in (store / 'calls.jsonl').read_text().splitlines()]
         self.assertFalse(any(c[0] == 's3' or c[:2] == ['s3api', 'head-object'] for c in calls))
-        self.assertEqual(sum(c[:2] == ['s3api', 'put-object'] for c in calls), 2)
+        self.assertEqual(sum(c[:2] == ['s3api', 'put-object'] for c in calls), 1)
         self.assertEqual(self.http.requests, [])
         self.assertEqual(existing, {str(p.relative_to(target)): p.read_bytes() for p in target.rglob('*')
                                    if p.is_file() and p.name != 'manifest.json'})

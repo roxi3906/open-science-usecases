@@ -54,35 +54,42 @@ class ConcurrentReporterTests(unittest.TestCase):
             with patch('publication_steps.time.monotonic', return_value=reporter.started), \
                     patch('publication_steps.atomic_json', wraps=atomic_json) as snapshots:
                 for item in state['files']:
-                    reporter.update(item, status='completed')
-                    reporter.event(plan['steps'][0], 'file', 'completed', key=item['key'])
+                    reporter.event(plan['steps'][0], 'file', 'completed', target_key=item['key'])
                 self.assertEqual(snapshots.call_count, 0)
+                reporter.close()
                 reporter.summary()
                 self.assertEqual(snapshots.call_count, 1)
             self.assertEqual(log.getvalue(), '')
             events = (Path(directory) / 'events.jsonl').read_text().splitlines()
             self.assertEqual(len(events), 1000)
             state = json.loads((Path(directory) / 'status.json').read_text())
-            self.assertTrue(all(f['status'] == 'completed' for f in state['steps'][0]['files']))
+            self.assertTrue(all(f['status'] == 'uploaded' for f in state['steps'][0]['files']))
 
-    def test_failure_updates_cannot_resize_state_during_snapshot_on_python312(self):
+    def test_concurrent_file_events_are_complete_after_monitor_snapshots(self):
         from concurrent.futures import ThreadPoolExecutor
         import contextlib
         import io
         import json
         from publication_steps import Reporter
         plan = {'after': 'fixture', 'steps': [{'id': 1, 'operation': 'ADD_CASE', 'name': 'case',
-                'files': [{'key': 'case/' + str(n)} for n in range(30000)]}]}
+                'files': [{'key': 'case/' + str(n)} for n in range(3000)]}]}
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
             reporter = Reporter(plan, Path(directory))
-            state = reporter.state['steps'][0]
-            def mutate():
-                for i in range(20):
-                    reporter.update(state, **{'failure_' + str(i): 'fixture'})
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                futures = [pool.submit(mutate), pool.submit(reporter.event, plan['steps'][0], 'step', 'failed')]
-                for future in futures:
-                    future.result()
-            reporter.summary()
-            saved = json.loads((Path(directory) / 'status.json').read_text())['steps'][0]
-            self.assertTrue(all('failure_' + str(i) in saved for i in range(20)))
+            try:
+                def report(start):
+                    for number in range(start, start + 1000):
+                        reporter.event(plan['steps'][0], 'file', 'completed', target_key='case/' + str(number))
+                with ThreadPoolExecutor(max_workers=3) as pool:
+                    futures = [pool.submit(report, start) for start in (0, 1000, 2000)]
+                    # Only the monitor owns state snapshots while worker events are queued.
+                    for _ in range(20):
+                        reporter.save()
+                    for future in futures:
+                        future.result()
+            finally:
+                reporter.close()
+            saved = json.loads((Path(directory) / 'status.json').read_text())
+            self.assertEqual(len(saved['uploaded_uncommitted']), 3000)
+            self.assertTrue(all(item['status'] == 'uploaded' for item in saved['steps'][0]['files']))
+            events = [json.loads(line) for line in (Path(directory) / 'events.jsonl').read_text().splitlines()]
+            self.assertEqual({event['target_key'] for event in events}, {'case/' + str(n) for n in range(3000)})
