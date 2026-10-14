@@ -2,7 +2,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
-import json
 import os
 from pathlib import Path
 import sys
@@ -12,7 +11,8 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from publish import S3
+from publish import S3, matching_head
+from botocore.exceptions import ClientError
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -64,10 +64,12 @@ class SdkTransferTests(unittest.TestCase):
         self.env = {'AWS_ACCESS_KEY_ID': 'fixture', 'AWS_SECRET_ACCESS_KEY': 'fixture',
                     'AWS_DEFAULT_REGION': 'us-east-1', 'AWS_EC2_METADATA_DISABLED': 'true',
                     'AWS_ENDPOINT_URL_S3': 'http://127.0.0.1:' + str(self.server.server_port)}
-        self.enterContext(patch.dict(os.environ, self.env))
+        environment = patch.dict(os.environ, self.env)
+        environment.start()
+        self.addCleanup(environment.stop)
         self.s3 = S3('s3://fixture/cases')
-        self.s3.enable_transfers(4)
         self.addCleanup(self.s3.client.close)
+        self.addCleanup(self.s3.manifest_client.close)
 
     def test_put_and_head_keep_distinct_sha_mime_keys_and_reuse_connections(self):
         files = []
@@ -78,8 +80,8 @@ class SdkTransferTests(unittest.TestCase):
         def transfer(path):
             key = 'a-case/space + ü/' + path.name
             self.s3.upload(path, key)
-            self.s3.verify_upload(key, path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest())
-            json.dumps(self.s3.head(key))  # HEAD evidence must be safe in the persisted plan.
+            self.assertTrue(matching_head(self.s3.head(key), {
+                'bytes': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}))
         with ThreadPoolExecutor(max_workers=4) as pool:
             list(pool.map(transfer, files))
         self.assertEqual(len(self.server.objects), 16)
@@ -88,10 +90,10 @@ class SdkTransferTests(unittest.TestCase):
             self.assertIn('/fixture/cases/a-case/space%20%2B%20%C3%BC/', key)
             self.assertEqual(headers['x-amz-meta-sha256'], hashlib.sha256(body).hexdigest())
             self.assertEqual(headers['Content-Type'], 'image/png')
-        self.assertFalse(self.s3.transfer_config.use_threads)
-        self.assertEqual(self.s3.transfer_config.preferred_transfer_client, 'classic')
-        self.assertEqual(self.s3.client.meta.config.max_pool_connections, 4)
-        self.assertEqual(self.s3.client.meta.config.retries['total_max_attempts'], 3)
+        self.assertFalse(self.s3.transfer.use_threads)
+        self.assertEqual(self.s3.transfer.preferred_transfer_client, 'classic')
+        self.assertEqual(self.s3.client.meta.config.max_pool_connections, 64)
+        self.assertEqual(self.s3.client.meta.config.retries['total_max_attempts'], 4)
 
     def test_large_file_uses_managed_multipart_with_per_object_metadata(self):
         from botocore.stub import Stubber
@@ -116,7 +118,7 @@ class SdkTransferTests(unittest.TestCase):
         self.assertEqual(calls[0][1]['ContentType'], 'application/octet-stream')
         self.assertEqual([calls[1][1]['PartNumber'], calls[2][1]['PartNumber']], [1, 2])
 
-    def test_only_missing_object_is_deduplicated_as_absent(self):
+    def test_only_missing_object_is_reported_as_absent(self):
         self.assertIsNone(self.s3.head('missing'))
-        with self.assertRaisesRegex(ValueError, '403'):
+        with self.assertRaisesRegex(ClientError, '403'):
             self.s3.head('denied')

@@ -68,7 +68,7 @@ class RemoteResourcesTests(GitFixture):
                 publisher.apply(self.root, plan, store)
                 self.assertEqual(len(self.http.requests), sum(flags))
                 self.assertEqual(len(set(self.http.requests)), sum(flags))
-                self.assertEqual(store.clears, ['a-case'])
+                self.assertEqual(store.clears, [])
                 self.assertEqual(store.manifest, (self.root / 'manifest.json').read_text())
                 for kind in publisher.KINDS:
                     self.assertIn('a-case/'+self.entry[kind]['file_name'], store.writes)
@@ -96,7 +96,7 @@ class RemoteResourcesTests(GitFixture):
                     publisher.apply(self.root, plan, store)
                     self.assertIn(item['key'], store.writes)
 
-    def test_remote_candidate_dedup_uses_target_without_downloading_source(self):
+    def test_selected_remote_candidate_downloads_and_overwrites_matching_target(self):
         self.set_source('cover', True)
         self.write_manifest(); after = self.commit()
         # Unchanged URL with changed digest is a candidate, not a forced source switch.
@@ -105,11 +105,12 @@ class RemoteResourcesTests(GitFixture):
         item = plan['candidates'][0]; store = Store(plan['baseline'])
         store.objects[item['key']] = {'ContentLength': item['bytes'], 'Metadata': {'sha256': item['sha256']}}
         plan = self.staged(plan, store)
-        self.assertEqual(self.http.requests, [])
+        self.assertEqual(self.http.requests, ['/cover.png'])
+        self.assertEqual(store.heads, [])
         with contextlib.redirect_stdout(io.StringIO()):
             publisher.apply(self.root, plan, store)
-        self.assertEqual(store.heads, [item['key'], item['key']])
-        self.assertNotIn(item['key'], store.writes)
+        self.assertEqual(store.heads, [item['key']])
+        self.assertIn(item['key'], store.writes)
 
     def test_remote_size_sha_and_truncation_fail_before_writes(self):
         for kind in publisher.KINDS:
@@ -194,7 +195,7 @@ class RemoteResourcesTests(GitFixture):
                 plan = extract_science.expand_plan(self.root, plan, self.root / 'staging')
                 publisher.apply(self.root, plan, store)
                 self.assertCountEqual(self.http.requests, expected)
-                self.assertEqual(store.clears, ['a-case'])
+                self.assertEqual(store.clears, [])
                 self.assertEqual(store.manifest, (self.root / 'manifest.json').read_text())
                 for kind in publisher.KINDS:
                     key = 'a-case/' + self.entry[kind]['file_name']

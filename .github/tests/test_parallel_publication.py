@@ -1,4 +1,4 @@
-"""Exercise the real pipeline with deterministic overlap and case-local failures."""
+"""Exercise the real pipeline with deterministic overlap and global failure convergence."""
 import contextlib
 import copy
 import hashlib
@@ -23,7 +23,7 @@ class MemoryS3:
         self.active = {}
         self.peak = self.peak_cases = 0
         self.per_case_peak = {}
-        self.objects, self.commits, self.started, self.cleared = {}, [], [], []
+        self.objects, self.commits, self.started = {}, [], []
         self.owner = threading.get_ident()
 
     def read_manifest(self):
@@ -33,12 +33,13 @@ class MemoryS3:
         value = self.objects.get(key)
         return {'ContentLength': len(value), 'Metadata': {'sha256': hashlib.sha256(value).hexdigest()}} if value is not None else None
 
-    def clear_extracted(self, name):
+    def list_keys(self, prefix):
+        return [key for key in self.objects if key.startswith(prefix)]
+
+    def delete_keys(self, keys):
         with self.lock:
-            self.cleared.append(name)
-            for key in list(self.objects):
-                if key.startswith(name + '/extracted/'):
-                    del self.objects[key]
+            for key in keys:
+                self.objects.pop(key, None)
 
     def upload(self, path, key):
         name = key.split('/')[0]
@@ -91,80 +92,80 @@ class ParallelPublicationTests(GitFixture):
             resource.update(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
         self.write_manifest()
         after = self.commit()
-        return publisher.prepare(self.root, '[]', after, check_local=False)
+        return publisher.prepare(self.root, '[]', after)
 
     def execute(self, plan, s3, **kwargs):
         log = io.StringIO()
         with contextlib.redirect_stdout(log):
-            publisher.apply(self.root, plan, s3, self.root / 'publication', prepare_cases=True, **kwargs)
+            from extract_science import expand_plan
+            plan = publisher.prepare_resources(self.root, plan, s3, self.root / 'sources')
+            plan = expand_plan(self.root, plan, self.root / 'science-publication')
+            publisher.apply(self.root, plan, s3, self.root / 'publication', **kwargs)
         return log.getvalue()
 
     def statuses(self):
         return json.loads((self.root / 'publication/status.json').read_text())['steps']
 
-    def test_four_cases_eight_files_overlap_and_index_has_one_writer(self):
+    def test_shared_upload_pool_is_bounded_and_index_has_one_writer(self):
         plan = self.make_plan()
-        store = MemoryS3('[]', overlap=32)
+        store = MemoryS3('[]', overlap=16)
         log = self.execute(plan, store)
-        self.assertEqual(store.peak, 32)
-        self.assertEqual(store.peak_cases, 4)
-        self.assertTrue(all(n <= 8 for n in store.per_case_peak.values()))
+        self.assertEqual(store.peak, 16)
+        self.assertLessEqual(store.peak_cases, 4)
+        self.assertTrue(all(n <= 16 for n in store.per_case_peak.values()))
         self.assertEqual(store.baseline, (self.root / 'manifest.json').read_text())
         self.assertEqual({entry['name'] for entry in store.commits[-1]}, {e['name'] for e in self.entries})
         self.assertTrue(all(s['status'] == 'completed' for s in self.statuses()))
         self.assertLess(len(log.splitlines()), 100)
         journal = (self.root / 'publication/events.jsonl').read_text()
-        self.assertGreater(journal.count('"phase": "file"'), 300)
+        self.assertEqual(journal.count('"phase": "file"'), len(store.started))
 
-    def test_upload_failure_does_not_publish_failed_case_or_stop_other_cases(self):
+    def test_upload_failure_does_not_publish_failed_case_or_final_sync(self):
         plan = self.make_plan()
         store = MemoryS3('[]', fail_case='a-case')
         with self.assertRaisesRegex(OSError, 'fixture upload failed'):
             self.execute(plan, store)
-        self.assertEqual({e['name'] for e in json.loads(store.baseline)}, {'case-1', 'case-2', 'case-3', 'case-4'})
+        published = {e['name'] for e in json.loads(store.baseline)}
+        self.assertTrue(published <= {'case-1', 'case-2', 'case-3', 'case-4'})
+        self.assertGreaterEqual(len(published), 2)
         self.assertTrue(all('a-case' not in {e['name'] for e in commit} for commit in store.commits))
-        self.assertEqual(self.statuses()[-1]['status'], 'skipped')
+        self.assertEqual(self.statuses()[-1]['status'], 'waiting')
         self.assertFalse(any(store.active.values()))
-        self.assertLessEqual(sum(key.startswith('a-case/') for key in store.started), 8)
+        self.assertLessEqual(sum(key.startswith('a-case/') for key in store.started), 16)
 
-    def test_failed_extraction_is_local_and_never_clears_that_case(self):
+    def test_failed_extraction_prevents_all_resource_writes(self):
         plan = self.make_plan(count=3)
         entry = self.entries[0]['case']
         data = b'not an archive'
         (self.root / entry['path']).write_bytes(data)
         entry.update(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
         self.write_manifest(); after = self.commit()
-        plan = publisher.prepare(self.root, '[]', after, check_local=False)
+        plan = publisher.prepare(self.root, '[]', after)
         store = MemoryS3('[]')
         with self.assertRaises(Exception):
             self.execute(plan, store)
-        self.assertNotIn('a-case', store.cleared)
-        self.assertEqual({e['name'] for e in json.loads(store.baseline)}, {'case-1', 'case-2'})
+        self.assertEqual(store.baseline, '[]')
+        self.assertFalse(store.started)
 
-    def test_missing_source_is_local_even_when_it_has_no_resource_candidate(self):
+    def test_missing_source_blocks_preparation_even_without_resource_candidate(self):
         self.make_plan(count=2)
         baseline = (self.root / 'manifest.json').read_text()
         self.entries[0]['title'] = 'Renamed'
         Path(self.root / self.entries[0]['cover']['path']).unlink()
         self.entry = self.entries[1]; self.change()
-        plan = publisher.prepare(self.root, baseline, self.git('rev-parse', 'HEAD'), check_local=False)
-        store = MemoryS3(baseline)
         with self.assertRaisesRegex(ValueError, 'missing'):
-            self.execute(plan, store)
-        published = {e['name']: e for e in json.loads(store.baseline)}
-        self.assertNotEqual(published['a-case']['title'], 'Renamed')
-        self.assertEqual(published['case-1'], self.entries[1])
+            publisher.prepare(self.root, baseline, self.git('rev-parse', 'HEAD'))
 
-    def test_cdn_failure_preserves_accepted_case_and_continues(self):
+    def test_cdn_failure_preserves_accepted_batch_and_stops(self):
         plan = self.make_plan(count=3)
         store = MemoryS3('[]', fail_cdn='case-1')
         with self.assertRaisesRegex(OSError, 'CDN failure'):
             self.execute(plan, store)
-        self.assertEqual(store.baseline, (self.root / 'manifest.json').read_text())
+        self.assertNotEqual(store.baseline, (self.root / 'manifest.json').read_text())
         failed = next(s for s in self.statuses() if s['name'] == 'case-1')
         self.assertTrue(failed['manifest_verified'])
-        self.assertEqual(failed['cdn'], 'failed')
-        self.assertEqual(self.statuses()[-1]['status'], 'completed')
+        self.assertEqual(failed['cdn'], 'pending')
+        self.assertEqual(self.statuses()[-1]['status'], 'waiting')
 
     def test_fabricated_prepared_input_cannot_bypass_case_preparation(self):
         plan = self.make_plan(count=1)
@@ -199,10 +200,10 @@ class ParallelPublicationTests(GitFixture):
             item.update(bytes=8, sha256=hashlib.sha256(b'changed!').hexdigest())
         self.write_manifest(); after = self.commit()
         text = json.dumps(baseline)
-        return publisher.prepare(self.root, text, after, check_local=False), text
+        return publisher.prepare(self.root, text, after), text
 
     def test_catalog_release_and_reuse_form_one_independent_commit_unit(self):
-        from publication_runner import next_manifest
+        from publication_runtime import apply_task
         plan, baseline = self.catalog_reuse_plan()
         groups = [s for s in plan['steps'] if s['operation'] not in ('REORDER', 'FINAL_SYNC')]
         self.assertEqual(len(groups), 2)
@@ -210,10 +211,10 @@ class ParallelPublicationTests(GitFixture):
         self.assertEqual({e['name'] for e in group['after']}, {'a-case', 'case-1'})
         # Both completion orders must be valid against the accepted baseline.
         for order in (groups, list(reversed(groups))):
-            current = baseline
+            current = json.loads(baseline)
             for step in order:
-                current = next_manifest(current, step)
-            self.assertEqual({e['name']: e for e in json.loads(current)},
+                current = apply_task(current, step)
+            self.assertEqual({e['name']: e for e in current},
                              {e['name']: e for e in self.entries})
         store = MemoryS3(baseline)
         self.execute(plan, store)
@@ -224,7 +225,7 @@ class ParallelPublicationTests(GitFixture):
         # Put the independent update between the two dependent operations.
         self.entries[:] = [self.entries[0], self.entries[2], self.entries[1]]
         self.write_manifest(); after = self.commit()
-        plan = publisher.prepare(self.root, baseline, after, check_local=False)
+        plan = publisher.prepare(self.root, baseline, after)
         group = next(s for s in plan['steps'] if s['operation'] == 'UPDATE_CATALOG')
         self.assertEqual({e['name'] for e in group['after']}, {'a-case', 'case-1'})
         self.assertTrue(any(s['name'] == 'case-2' for s in plan['steps']))
@@ -232,9 +233,9 @@ class ParallelPublicationTests(GitFixture):
         with self.assertRaises(OSError):
             self.execute(plan, store)
         published = {e['name']: e for e in json.loads(store.baseline)}
-        self.assertEqual(published['case-2'], self.entries[1])
+        self.assertNotEqual(published['case-2'], self.entries[1])
 
-    def test_failed_catalog_group_does_not_block_unrelated_case(self):
+    def test_failed_catalog_group_blocks_later_unrelated_case(self):
         plan, baseline = self.catalog_reuse_plan()
         store = MemoryS3(baseline, fail_case='a-case')
         with self.assertRaises(OSError):
@@ -243,13 +244,12 @@ class ParallelPublicationTests(GitFixture):
         old = {e['name']: e for e in json.loads(baseline)}
         self.assertEqual(published['a-case'], old['a-case'])
         self.assertEqual(published['case-1'], old['case-1'])
-        self.assertEqual(published['case-2'], self.entries[2])
-        self.assertFalse(any(key.startswith('case-1/') for key in store.started))
+        self.assertEqual(published['case-2'], old['case-2'])
 
     def test_global_commit_conflict_stops_scheduling_and_drains_workers(self):
         import subprocess
         plan = self.make_plan(count=5, objects=8)
-        store = MemoryS3('[]', overlap=32)
+        store = MemoryS3('[]', overlap=16)
         def conflict(path):
             raise subprocess.CalledProcessError(1, ['fixture'], stderr='PreconditionFailed')
         store.commit_manifest = conflict
@@ -261,7 +261,11 @@ class ParallelPublicationTests(GitFixture):
         self.assertEqual(self.statuses()[-1]['status'], 'waiting')
 
     def test_invalid_concurrency_fails_before_writes(self):
+        from unittest.mock import patch
         plan = self.make_plan(count=1)
-        for cases, files in [(0, 8), (4, 0), (17, 1), (4, 33), (16, 8)]:
-            with self.subTest(cases=cases, files=files), self.assertRaises(ValueError):
-                self.execute(plan, MemoryS3('[]'), case_workers=cases, file_workers=files)
+        for workers in ('0', '65', 'invalid'):
+            store = MemoryS3('[]')
+            with self.subTest(workers=workers), patch.dict('os.environ', {'PUBLICATION_UPLOAD_WORKERS': workers}):
+                with self.assertRaises(ValueError):
+                    self.execute(plan, store)
+            self.assertFalse(store.started or store.commits)

@@ -14,6 +14,11 @@ import check_structure as checker
 
 
 class Store:
+    target = 's3://fixture/cases'
+
+    def cdn_paths(self, names):
+        return ['/cases/manifest.json'] + ['/cases/' + name + '/*' for name in sorted(names)]
+
     def __init__(self, baseline=None):
         self.manifest = baseline
         self.objects = {}
@@ -38,6 +43,13 @@ class Store:
         size, sha = publisher.file_integrity(path)
         self.objects[key] = {'ContentLength': size, 'Metadata': {'sha256': sha}}
         self.writes.append(key)
+
+    def list_keys(self, prefix):
+        return [key for key in self.objects if key.startswith(prefix)]
+
+    def delete_keys(self, keys):
+        for key in keys:
+            self.objects.pop(key, None)
 
     def verify_upload(self, key, size, sha):
         assert self.objects[key] == {'ContentLength': size, 'Metadata': {'sha256': sha}}
@@ -99,21 +111,17 @@ class SourcesTests(GitFixture):
                     self.assertEqual(head.call_count, sum(flags))
                     os.chdir(previous)
 
-    def test_metadata_dedup_and_revalidation(self):
+    def test_selected_matching_target_is_staged_and_overwritten(self):
         self.change()
-        plan = self.plan()
-        store = Store(plan['baseline'])
+        plan = self.plan(); store = Store(plan['baseline'])
         key = 'a-case/A Case.png'
         store.objects[key] = {'ContentLength': 8, 'Metadata': {'sha256': self.entry['cover']['sha256'].upper()}}
         staged = self.stage(plan, store)
-        self.assertEqual([f['key'] for f in staged['files']], ['manifest.json'])
-        self.assertEqual(staged['decisions'][0]['action'], 'skip')
+        self.assertEqual(store.heads, [])
+        self.assertEqual(staged['decisions'][0]['action'], 'upload')
         publisher.apply(self.root, staged, store)
-        self.assertNotIn(key, store.writes)
-        store.manifest = plan['baseline']
-        store.objects[key]['ContentLength'] = 9
-        with self.assertRaisesRegex(ValueError, 'skip|changed'):
-            publisher.apply(self.root, staged, store)
+        self.assertIn(key, store.writes)
+        self.assertEqual(store.heads, [key])
 
     def test_source_switch_forces_each_kind_even_with_same_target_sha(self):
         for kind in ('cover', 'case', 'introduction'):
@@ -167,10 +175,10 @@ class SourcesTests(GitFixture):
                 store = Store(plan['baseline']); store.objects[key] = head
                 staged = self.stage(plan, store)
                 self.assertEqual(staged['decisions'][0]['action'], 'upload')
-                self.assertEqual(store.heads, [key])
+                self.assertEqual(store.heads, [])
         for error in (PermissionError('403'), OSError('network')):
             store = Store(plan['baseline'])
-            with patch.object(store, 'head', side_effect=error), self.assertRaises(OSError):
+            with patch.object(store, 'head', side_effect=error):
                 self.stage(plan, store)
             self.assertEqual(store.writes, [])
 
@@ -221,7 +229,7 @@ class SourcesTests(GitFixture):
         for item in plan['candidates']:
             store.objects[item['key']] = {'ContentLength': item['bytes'], 'Metadata': {'sha256': item['sha256']}}
         staged = self.stage(plan, store)
-        self.assertEqual([f['kind'] for f in staged['files'] if 'kind' in f], ['case'])
+        self.assertEqual([f['kind'] for f in staged['files'] if 'kind' in f], ['cover', 'case', 'introduction'])
         self.assertEqual(len(staged['packages']), 1)
 
     def test_local_checkout_mutation_is_rejected_during_preparation(self):
@@ -246,10 +254,10 @@ class SourcesTests(GitFixture):
         from test_publish import PublishTests
         store_path, env = PublishTests.s3_fixture(self)
         with patch.dict(os.environ, env):
-            store = publisher.S3(env['AWS_TARGET_FOLDER'])
+            store = publisher.S3(env['AWS_TARGET_FOLDER'], client=__import__('fake_sdk').FakeS3Client(env['FAKE_S3_ROOT']))
             self.assertIsNone(store.head('absent.png'))
             for code in ('AccessDenied', 'RequestTimeout', '500'):
-                with patch.dict(os.environ, {'FAKE_S3_HEAD_ERROR': code}), self.assertRaises(ValueError):
+                with patch.dict(os.environ, {'FAKE_S3_HEAD_ERROR': code}), self.assertRaises(__import__('botocore.exceptions', fromlist=['ClientError']).ClientError):
                     store.head('absent.png')
 
     def test_untracked_local_source_cannot_enter_fixed_checkout_publication(self):

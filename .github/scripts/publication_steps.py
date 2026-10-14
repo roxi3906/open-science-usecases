@@ -1,12 +1,14 @@
-"""Case-sized manifest checkpoints and their reviewable execution evidence."""
+"""Classification-safe task plans and serialized publication evidence."""
 import copy
-from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
+from pathlib import Path
 import time
+import queue
 import threading
+import uuid
 
 from check_structure import catalog_errors
 
@@ -20,104 +22,66 @@ def digest(text):
 
 
 def build_steps(old, new, target_text):
-    """Only case operations change entries; ordering and exact bytes have explicit steps."""
+    """Group connected classification changes before constructing legal checkpoints."""
+    previous = {e['name']: e for e in old}
+    desired = {e['name']: e for e in new}
+    order = ([e['name'] for e in reversed(new) if e['name'] not in previous]
+             + [e['name'] for e in new if e['name'] in previous and e != previous[e['name']]]
+             + [e['name'] for e in old if e['name'] not in desired])
+    groups = [{name} for name in order]
+    def labels(name):
+        return {e.get('catalog_name') for e in (previous.get(name, {}), desired.get(name, {}))
+                if e.get('catalog_name')}
+    old_catalogs = {e.get('catalog_name'): e.get('catalog') for e in old if e.get('catalog_name')}
+    new_catalogs = {e.get('catalog_name'): e.get('catalog') for e in new if e.get('catalog_name')}
+    remapped = {key for key in old_catalogs.keys() & new_catalogs.keys()
+                if old_catalogs[key] != new_catalogs[key]}
+    def classification_changed(name):
+        if labels(name) & remapped:
+            return True
+        if name not in previous or name not in desired:
+            return False
+        return tuple(previous.get(name, {}).get(k) for k in ('catalog', 'catalog_name')) != tuple(
+            desired.get(name, {}).get(k) for k in ('catalog', 'catalog_name'))
+    for name in order:
+        if not classification_changed(name):
+            continue
+        related = [g for g in groups if any(labels(name) & labels(n) for n in g) or name in g]
+        merged = set().union(*related)
+        first = min(groups.index(g) for g in related)
+        groups = [g for g in groups if g not in related]
+        groups.insert(first, merged)
     current = copy.deepcopy(old)
-    previous = {entry['name']: entry for entry in old}
     steps = []
-
-    def append(operation, name=None, before=None, after=None):
-        # Build primitive operations first. Group only actual catalog dependencies below.
-        steps.append({'id': len(steps) + 1, 'operation': operation, 'name': name,
-                      'before': copy.deepcopy(before), 'after': copy.deepcopy(after),
-                      'manifest': encoded(current), 'files': [], 'packages': []})
-
-    # Reverse insertion retains the repository's relative order within the new head group.
-    for entry in reversed([entry for entry in new if entry['name'] not in previous]):
-        current.insert(0, copy.deepcopy(entry))
-        append('ADD_CASE', entry['name'], after=entry)
-    for entry in new:
-        name = entry['name']
-        if name in previous and entry != previous[name]:
-            index = next(i for i, item in enumerate(current) if item['name'] == name)
-            current[index] = copy.deepcopy(entry)
-            append('UPDATE_CASE', name, previous[name], entry)
-    desired = {entry['name'] for entry in new}
-    for entry in old:
-        if entry['name'] not in desired:
-            current = [item for item in current if item['name'] != entry['name']]
-            append('REMOVE_CASE', entry['name'], before=entry)
-    if [entry['name'] for entry in current] != [entry['name'] for entry in new]:
-        before = [entry['name'] for entry in current]
-        current = copy.deepcopy(new)
-        append('REORDER', before=before, after=[entry['name'] for entry in new])
-    append('FINAL_SYNC')
-    steps[-1]['manifest'] = target_text  # Preserve the fixed commit's bytes, even on a no-op run.
-    return independent_catalog_steps(old, new, steps, target_text)
-
-
-def checkpoint_entries(current, step):
-    """Apply one operation to the actually accepted entries."""
-    operation = step['operation']
-    if operation == 'REORDER':
-        by_name = {entry['name']: entry for entry in current}
-        return [by_name[name] for name in step['after']]
-    if operation == 'ADD_CASE':
-        return [step['after'], *current]
-    if operation == 'UPDATE_CASE':
-        return [step['after'] if entry['name'] == step['name'] else entry for entry in current]
-    if operation == 'REMOVE_CASE':
-        return [entry for entry in current if entry['name'] != step['name']]
-    if operation == 'UPDATE_CATALOG':
-        replacements = {entry['name']: entry for entry in step['after']}
-        names = {entry['name'] for entry in step['before'] + step['after']}
-        seen = {entry['name'] for entry in current}
-        return ([entry for entry in step['after'] if entry['name'] not in seen] +
-                [replacements.get(entry['name'], entry) for entry in current
-                 if entry['name'] not in names or entry['name'] in replacements])
-    return current
-
-
-def independent_catalog_steps(old, new, steps, target_text):
-    """Coalesce identifier release/reuse dependencies before allowing completion-order commits."""
-    old_labels = {e['catalog_name']: e['catalog'] for e in old if e.get('catalog_name')}
-    new_labels = {e['catalog_name']: e['catalog'] for e in new if e.get('catalog_name')}
-    changed_labels = {key for key in old_labels.keys() & new_labels.keys()
-                      if old_labels[key] != new_labels[key]}
-    if not changed_labels:
-        return steps
-    groups = [{i} for i, s in enumerate(steps) if s['operation'] not in ('REORDER', 'FINAL_SYNC')]
-    owners = {}
-    for i, step in enumerate(steps):
-        names = ({e['name'] for e in step['before'] + step['after']}
-                 if step['operation'] == 'UPDATE_CATALOG' else {step['name']})
-        owners.update({name: i for name in names if name})
-    for identifier in changed_labels:
-        involved = {owners[e['name']] for e in old + new
-                    if e.get('catalog_name') == identifier and e['name'] in owners}
-        merged = set().union(*(group for group in groups if group & involved))
-        groups = [group for group in groups if not group & involved] + [merged]
-    result, current = [], copy.deepcopy(old)
-    for group in sorted(groups, key=min):
-        if len(group) == 1:
-            step = copy.deepcopy(steps[next(iter(group))])
-        else:
-            names = {name for name, owner in owners.items() if owner in group}
-            step = {'operation': 'UPDATE_CATALOG', 'name': None,
-                    'before': [e for e in old if e['name'] in names],
-                    'after': [e for e in new if e['name'] in names], 'files': [], 'packages': []}
-        current = checkpoint_entries(current, step)
+    for names in groups:
+        before = [e for e in current if e['name'] in names]
+        for name in order:
+            if name not in names:
+                continue
+            if name not in desired:
+                current = [e for e in current if e['name'] != name]
+            elif name in previous:
+                index = next(i for i, e in enumerate(current) if e['name'] == name)
+                current[index] = copy.deepcopy(desired[name])
+            else:
+                current.insert(0, copy.deepcopy(desired[name]))
+        after = [e for e in current if e['name'] in names]
         if catalog_errors(current, legacy=True):
-            raise ValueError('Cannot build independent catalog checkpoints')
-        step.update(id=len(result) + 1, manifest=encoded(current))
-        result.append(step)
-    for original in steps:
-        if original['operation'] in ('REORDER', 'FINAL_SYNC'):
-            step = copy.deepcopy(original)
-            current = checkpoint_entries(current, step)
-            step.update(id=len(result) + 1,
-                        manifest=target_text if step['operation'] == 'FINAL_SYNC' else encoded(current))
-            result.append(step)
-    return result
+            raise ValueError('Cannot build publication checkpoints with invalid catalogs')
+        name = next(iter(names)) if len(names) == 1 else None
+        operation = ('UPDATE_CATALOG' if name is None else
+                     'REMOVE_CASE' if not after else 'ADD_CASE' if not before else 'UPDATE_CASE')
+        steps.append({'id': len(steps) + 1, 'operation': operation, 'name': name,
+                      'before': before if name is None else (before[0] if before else None),
+                      'after': after if name is None else (after[0] if after else None),
+                      'manifest': encoded(current), 'files': [], 'packages': []})
+    if [e['name'] for e in current] != [e['name'] for e in new]:
+        steps.append({'id': len(steps) + 1, 'operation': 'REORDER', 'name': None,
+                      'before': [e['name'] for e in current], 'after': [e['name'] for e in new],
+                      'manifest': encoded(new), 'files': [], 'packages': []})
+    steps.append({'id': len(steps) + 1, 'operation': 'FINAL_SYNC', 'name': None,
+                  'before': None, 'after': None, 'manifest': target_text, 'files': [], 'packages': []})
+    return steps
 
 
 def group_files(plan):
@@ -132,6 +96,7 @@ def group_files(plan):
             step['files'] = [item for item in plan['files']
                              if item['key'].split('/', 1)[0] in names]
             step['packages'] = [item for item in plan['packages'] if item['name'] in names]
+    plan['tasks'] = build_tasks(plan)
     return plan
 
 
@@ -142,6 +107,22 @@ def atomic_json(path, value):
 
 
 def write_artifacts(plan, output):
+    batch_paths = list((output / 'batches').glob('*/status.json'))
+    for path in batch_paths:
+        batch = json.loads(path.read_text())
+        if batch.get('manifest_committed') is not False and (batch.get('cleanup_pending') or batch.get('cdn_pending')):
+            raise ValueError('Evidence has pending postprocessing; recover it before reusing this output directory')
+    status_path = output / 'status.json'
+    prior_status = json.loads(status_path.read_text()).get('status') if status_path.exists() else None
+    if batch_paths or prior_status in ('completed', 'failed'):
+        archive = output.with_name(output.name + '-previous-' + uuid.uuid4().hex)
+        archive.mkdir()
+        # Preserve previous evidence without moving unrelated files in the output directory.
+        for name in ('batches', 'steps', 'events.jsonl', 'status.json', 'summary.md', 'plan.json', 'baseline-manifest.json'):
+            source = output / name
+            if source.exists():
+                source.rename(archive / name)
+        print('Archived previous publication evidence: ' + str(archive), flush=True)
     output.mkdir(parents=True, exist_ok=True)
     (output / 'baseline-manifest.json').write_text(plan['baseline'] or '[]', encoding='utf-8')
     for step in plan['steps']:
@@ -155,92 +136,132 @@ def write_artifacts(plan, output):
 
 
 def print_plan(plan):
-    print('Publication target: ' + plan['after'], flush=True)
-    print('Step counts: ' + json.dumps(Counter(step['operation'] for step in plan['steps'])), flush=True)
-    print('Candidates: {}; packages: {}; unchanged cases: {}'.format(
-        len(plan['candidates']), len(plan['packages']), len(plan.get('unchanged', []))), flush=True)
-    print('[waiting] Full manifests, decisions and file lists are saved in the publication artifact.', flush=True)
+    print('Publication plan: target={} tasks={} objects={} packages={}'.format(
+        plan['after'], len(plan['tasks']), len(plan['files']) - 1, len(plan['packages'])), flush=True)
 
 
-def step_directory(output, step):
-    return output / 'steps' / ('%03d-%s' % (step['id'], step['name'] or step['operation'].lower()))
+def build_tasks(plan):
+    from s3_storage import content_type
+    old = {e['name']: e for e in json.loads(plan['baseline'] or '[]')}
+    tasks = []
+    for step in plan['steps']:
+        # Index-only differences are deferred to the exact final synchronization.
+        if not step['files']:
+            continue
+        entries = step['after'] if step['operation'] == 'UPDATE_CATALOG' else [step['after']]
+        before = step['before'] if step['operation'] == 'UPDATE_CATALOG' else [step['before']]
+        names = list(dict.fromkeys(e['name'] for e in entries + before if e))
+        cases = []
+        for name in names:
+            objects = []
+            for item in step['files']:
+                if item['key'].split('/', 1)[0] != name:
+                    continue
+                obj = {'local_path': item['path'], 'target_key': item['key'],
+                       'bytes': item['bytes'], 'sha256': item['sha256'],
+                       'content_type': content_type(item['key']), 'action': 'upload',
+                       'reason': item.get('reasons', ['selected package directory replacement'])}
+                previous = old.get(name, {}).get(item.get('kind'), {})
+                if previous and previous['file_name'] != item['key'].split('/', 1)[1]:
+                    obj['old_key'] = name + '/' + previous['file_name']
+                objects.append(obj)
+            package = next((p for p in step['packages'] if p['name'] == name), None)
+            directory = None
+            if package:
+                prefix = name + '/extracted/'
+                expanded = [o for o in objects if o['target_key'].startswith(prefix)]
+                local_root = None
+                if expanded:
+                    first = expanded[0]
+                    local_root = str(Path(first['local_path']).parents[
+                        len(Path(first['target_key'][len(prefix):]).parts) - 1])
+                directory = {'local_root': local_root, 'target_prefix': prefix, 'objects': expanded}
+            cases.append({'name': name, 'objects': objects, 'directory': directory})
+        tasks.append({'id': step['id'], 'operation': step['operation'], 'name': step['name'],
+                      'before': step['before'], 'after': step['after'], 'cases': cases})
+    return tasks
 
 
 class Reporter:
-    """Serialize evidence writes; file events are journaled, snapshots are rate limited."""
+    """Durable statuses distinguish a committed manifest from a failed CDN refresh."""
     def __init__(self, plan, output):
         self.output = output
         self.started = time.monotonic()
-        self.last_snapshot = self.last_progress = self.started
-        self.lock = threading.RLock()
         self.state = {'after': plan['after'], 'steps': [
             {'id': s['id'], 'operation': s['operation'], 'name': s['name'], 'status': 'waiting',
              'manifest_committed': False, 'manifest_verified': False, 'cdn': 'waiting',
-             'files': [{'key': f['key'], 'status': 'waiting', 'bytes': f.get('bytes', 0)} for f in s['files']]}
+             'files': [{'key': f['key'], 'status': 'waiting'} for f in s['files']]}
             for s in plan['steps']]}
         atomic_json(output / 'status.json', self.state)
-        (output / 'events.jsonl').write_text('', encoding='utf-8')
+        self.events = queue.Queue(maxsize=1024)
+        self.writer_error = None
+        self.object_results = {}
+        self.uploaded_keys = set()
+        self.writer = threading.Thread(target=self._write_events, name='publication-events')
+        self.writer.start()
 
-    def update(self, state, **fields):
-        with self.lock:
-            state.update(fields)
+    def _write_events(self):
+        try:
+            with (self.output / 'events.jsonl').open('w', encoding='utf-8') as stream:
+                while True:
+                    event = self.events.get()
+                    if event is None:
+                        break
+                    stream.write(json.dumps(event, ensure_ascii=True) + '\n')
+                    stream.flush()
+                    if event['phase'] == 'file':
+                        # Later HEAD or repair failures cannot undo a successful write.
+                        if event['status'] == 'completed':
+                            self.uploaded_keys.add(event['target_key'])
+                        self.object_results[event['target_key']] = ('uploaded' if event['status'] == 'completed' else 'failed')
+                    elif event['phase'] == 'head':
+                        self.object_results[event['key']] = ('completed' if event['status'] == 'completed' else event['status'])
+        except BaseException as error:
+            self.writer_error = error
+
+    def save(self):
+        atomic_json(self.output / 'status.json', self.state)
+
+    def close(self):
+        self._enqueue(None)
+        self.writer.join()
+        if self.writer_error:
+            raise self.writer_error
+        for step in self.state['steps']:
+            for item in step['files']:
+                if item['key'] in self.object_results:
+                    item['status'] = self.object_results[item['key']]
+        self.state['uploaded_uncommitted'] = [item['key'] for step in self.state['steps']
+            if step['manifest_committed'] is not True for item in step['files']
+            if item['key'] in self.uploaded_keys]
+        self.save()
+
+    def _enqueue(self, value):
+        while True:
+            if self.writer_error:
+                raise self.writer_error
+            try:
+                self.events.put(value, timeout=0.1)
+                return
+            except queue.Full:
+                pass
 
     def event(self, step, phase, status, **details):
         record = {'time': datetime.now(timezone.utc).isoformat(), 'step': step['id'],
                   'phase': phase, 'status': status, **details}
-        with self.lock:
-            with (self.output / 'events.jsonl').open('a', encoding='utf-8') as stream:
-                stream.write(json.dumps(record, ensure_ascii=True) + '\n')
-            if phase != 'file' or status == 'failed':
-                label = step['name'] or step['operation']
-                detail = json.dumps(details.get('error', ''), ensure_ascii=True) if status == 'failed' else ''
-                if phase == 'files' and status == 'uploading':
-                    detail = '{} files, {} bytes, {} file workers'.format(
-                        details['file_count'], details['bytes'], details['workers'])
-                # JSON escaping keeps untrusted error text from injecting Actions commands.
-                print('[{}] {}: {} (step {}){}'.format(label, phase, status, step['id'],
-                      ' — ' + detail if detail else ''), flush=True)
-            now = time.monotonic()
-            if phase != 'file' or status == 'failed' or now - self.last_snapshot >= 5:
-                atomic_json(self.output / 'status.json', self.state)
-                self.last_snapshot = now
+        self._enqueue(record)
+        if phase not in ('file', 'head', 'replace', 'cleanup_object'):
+            print(json.dumps(record, ensure_ascii=True), flush=True)
 
-    def ready(self, step, state, files, packages):
-        with self.lock:
-            step['files'], step['packages'] = files, packages
-            state['files'] = [{'key': item['key'], 'status': 'waiting', 'bytes': item['bytes']} for item in files]
-            atomic_json(step_directory(self.output, step) / 'files.json', files)
-
-    def progress(self):
-        with self.lock:
-            now = time.monotonic()
-            if now - self.last_progress < 10:
-                return
-            self.last_progress = now
-            for state in self.state['steps']:
-                if state['status'] in ('preparing', 'uploading', 'ready'):
-                    done = sum(f['status'] == 'completed' for f in state['files'])
-                    print('[progress] {}: {} {}/{} files'.format(
-                        state['name'] or state['operation'], state['status'], done, len(state['files'])), flush=True)
-            atomic_json(self.output / 'status.json', self.state)
 
     def summary(self):
-        with self.lock:
-            atomic_json(self.output / 'status.json', self.state)
-            rows = ['### Case publication', '',
-                    '| Step | Case / operation | Status | Files verified | Bytes verified | Seconds | Manifest accepted / verified | CDN |',
-                    '| --- | --- | --- | --- | --- | --- | --- | --- |']
-            for s in self.state['steps']:
-                done = [f for f in s['files'] if f['status'] == 'completed']
-                rows.append('| {} | {} | {} | {}/{} | {} | {} | {} / {} | {} |'.format(
-                    s['id'], s['name'] or s['operation'], s['status'], len(done), len(s['files']),
-                    sum(f.get('bytes', 0) for f in done), s.get('elapsed_seconds', ''),
-                    s['manifest_committed'], s['manifest_verified'], s['cdn']))
-            rows.extend(['', 'Results: ' + str(dict(Counter(s['status'] for s in self.state['steps']))),
-                         '', 'Elapsed: %.1fs' % (time.monotonic() - self.started),
-                         '', 'See the publication artifact for per-file events and failure details.', ''])
-            text = '\n'.join(rows)
-            (self.output / 'summary.md').write_text(text, encoding='utf-8')
-            if os.environ.get('GITHUB_STEP_SUMMARY'):
-                with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as stream:
-                    stream.write(text)
+        rows = ['### Case publication', '', '| Step | Operation | Case | Status | Manifest accepted | Read-back verified | CDN |',
+                '| --- | --- | --- | --- | --- | --- | --- |']
+        for s in self.state['steps']:
+            rows.append('| {id} | {operation} | {name} | {status} | {manifest_committed} | {manifest_verified} | {cdn} |'.format(**s))
+        rows.extend(['', 'Elapsed: %.1fs' % (time.monotonic() - self.started), ''])
+        text = '\n'.join(rows)
+        (self.output / 'summary.md').write_text(text, encoding='utf-8')
+        if os.environ.get('GITHUB_STEP_SUMMARY'):
+            with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as stream:
+                stream.write(text)

@@ -70,10 +70,10 @@ class PublicationStepsTests(GitFixture):
         (target / 'manifest.json').write_text(baseline)
         plan_file = self.root / 'plan.json'
         env = {**os.environ, 'PATH': str(fake) + os.pathsep + os.environ['PATH'],
-               'FAKE_S3_ROOT': str(store), 'AWS_TARGET_FOLDER': 's3://bucket/cases',
+               'PYTHONPATH': str(Path(__file__).parent / 'sdk_boundary') + os.pathsep + str(Path(__file__).parent), 'FAKE_S3_ROOT': str(store), 'AWS_TARGET_FOLDER': 's3://bucket/cases',
                'AWS_DISTRIBUITION_ID': 'test-distribution'}
         def run(*args, fail=None):
-            return subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('fake_publish.py')), *args],
+            return subprocess.run([sys.executable, '-B', str(SCRIPTS / 'publish.py'), *args],
                                   cwd=self.root, env={**env, **(fail or {})}, capture_output=True, text=True)
         result = run('--after', self.git('rev-parse', 'HEAD'), '--prepare', str(plan_file))
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -98,9 +98,9 @@ class PublicationStepsTests(GitFixture):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
         calls = [json.loads(line) for line in (store / 'calls.jsonl').read_text().splitlines()]
-        self.assertEqual(sum(c[:2] == ['cloudfront', 'create-invalidation'] for c in calls), 4)
-        self.assertIn('waiting', result.stdout)
-        self.assertIn('uploading', result.stdout)
+        self.assertEqual(sum(c[:2] == ['cloudfront', 'create-invalidation'] for c in calls), 2)
+        self.assertIn('Publication plan:', result.stdout)
+        self.assertIn('running', result.stdout)
         self.assertIn('completed', result.stdout)
 
 
@@ -117,11 +117,11 @@ class PublicationBoundaryTests(GitFixture):
         (self.target / 'manifest.json').write_text(self.baseline)
         self.plan_file = self.root / 'plan.json'
         self.env = {**os.environ, 'PATH': str(fake) + os.pathsep + os.environ['PATH'],
-                    'FAKE_S3_ROOT': str(self.store), 'AWS_TARGET_FOLDER': 's3://bucket/cases',
+                    'PYTHONPATH': str(Path(__file__).parent / 'sdk_boundary') + os.pathsep + str(Path(__file__).parent), 'FAKE_S3_ROOT': str(self.store), 'AWS_TARGET_FOLDER': 's3://bucket/cases',
                     'AWS_DISTRIBUITION_ID': 'test-distribution'}
 
     def cli(self, *args, overrides=None, success=True):
-        result = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('fake_publish.py')), *args],
+        result = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'publish.py'), *args],
                                 cwd=self.root, env={**self.env, **(overrides or {})},
                                 text=True, capture_output=True)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
@@ -181,40 +181,34 @@ class PublicationBoundaryTests(GitFixture):
                                 cwd=self.root, env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_catalog_group_failure_preserves_later_case_resources(self):
+    def test_catalog_group_failure_blocks_manifest_without_preclearing(self):
         self.prepare_catalog_package_updates()
-        later = self.target / 'b-case'
-        original = {p.relative_to(later): p.read_bytes() for p in later.rglob('*') if p.is_file()}
         for failure in ({'FAKE_S3_FAIL': 'cp'}, {'FAKE_S3_BAD_HEAD': '1'}):
             with self.subTest(failure=failure):
                 start = len(self.calls())
                 self.apply_run(overrides=failure, success=False)
-                self.assertEqual({p.relative_to(later): p.read_bytes()
-                                  for p in later.rglob('*') if p.is_file()}, original)
                 self.assertEqual((self.target / 'manifest.json').read_text(), self.baseline)
+                for name in ('a-case', 'b-case'):
+                    self.assertTrue((self.target / name / 'extracted/uploads/old').is_file())
                 calls = self.calls()[start:]
-                self.assertEqual([c[2] for c in calls if c[:2] == ['s3', 'rm']],
-                                 ['s3://bucket/cases/a-case/extracted/'])
-                self.assertFalse(any(c[:2] == ['s3api', 'put-object'] for c in calls))
+                self.assertFalse(any(c[:2] in (['s3', 'rm'], ['s3api', 'put-object'], ['s3api', 'delete-objects']) for c in calls))
 
-    def test_catalog_group_finishes_case_uploads_and_checks_before_clearing_next(self):
+    def test_catalog_group_cleans_each_case_only_after_its_uploads_and_heads(self):
         self.prepare_catalog_package_updates()
-        start = len(self.calls())
-        self.apply_run()
-        calls = self.calls()[start:]
-        clear_a, clear_b = [i for i, c in enumerate(calls) if c[:2] == ['s3', 'rm']]
+        start = len(self.calls()); self.apply_run(); calls = self.calls()[start:]
         commit = next(i for i, c in enumerate(calls) if c[:2] == ['s3api', 'put-object'])
-        for begin, end, name in ((clear_a, clear_b, 'a-case'), (clear_b, commit, 'b-case')):
-            uploads = [c[3] for c in calls[begin + 1:end] if c[:2] == ['s3', 'cp']]
-            checks = [c[c.index('--key') + 1] for c in calls[begin + 1:end]
-                      if c[:2] == ['s3api', 'head-object']]
-            self.assertIn('s3://bucket/cases/' + name + '/extracted/session.json', uploads)
-            self.assertTrue(all(key.startswith('s3://bucket/cases/' + name + '/') for key in uploads))
-            self.assertEqual(checks, [key.removeprefix('s3://bucket/') for key in uploads])
+        for name in ('a-case', 'b-case'):
+            cleanup = next(i for i, c in enumerate(calls) if c[:2] == ['s3api', 'delete-objects']
+                           and any('/' + name + '/' in key for key in c[3:]))
+            uploads = [i for i, c in enumerate(calls) if c[:2] == ['s3', 'cp'] and '/' + name + '/' in c[3]]
+            heads = [i for i, c in enumerate(calls) if c[:2] == ['s3api', 'head-object']
+                     and '/' + name + '/' in c[c.index('--key') + 1]]
+            self.assertTrue(uploads and heads)
+            self.assertLess(max(uploads), min(heads))
+            self.assertLess(max(heads), cleanup); self.assertLess(cleanup, commit)
             self.assertFalse((self.target / name / 'extracted/uploads/old').exists())
             self.assertEqual((self.target / name / 'extracted/uploads/new').read_bytes(), b'<svg>fixture</svg>')
         self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
-        self.assertTrue(all(f['status'] == 'completed' for s in self.status() for f in s['files']))
 
     def test_catalog_group_invalidates_only_cases_with_uploaded_resources(self):
         import hashlib
@@ -240,11 +234,9 @@ class PublicationBoundaryTests(GitFixture):
         self.assertEqual([s['operation'] for s in plan['steps']], ['UPDATE_CATALOG', 'FINAL_SYNC'])
         invalidations = [c for c in self.calls() if c[:2] == ['cloudfront', 'create-invalidation']]
         self.assertEqual([c[c.index('--paths') + 1:] for c in invalidations], [
-            ['/cases/manifest.json', '/cases/a-case/*'],
-            ['/cases/manifest.json', '/cases/b-case/*'],
-            ['/cases/manifest.json'],
+            ['/cases/manifest.json', '/cases/a-case/*', '/cases/b-case/*'],
         ])
-        self.assertEqual(sum(c[:2] == ['cloudfront', 'wait'] for c in self.calls()), 3)
+        self.assertEqual(sum(c[:2] == ['cloudfront', 'wait'] for c in self.calls()), 1)
         self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
 
     def test_empty_first_publication_is_conditional_and_refreshes_cdn(self):
@@ -280,7 +272,7 @@ class PublicationBoundaryTests(GitFixture):
         self.assertEqual([s['operation'] for s in plan['steps']], ['REORDER', 'FINAL_SYNC'])
         self.assertEqual((self.target / 'manifest.json').read_bytes(), raw)
         calls = self.calls()
-        self.assertEqual(sum(c[:2] == ['cloudfront', 'create-invalidation'] for c in calls), 2)
+        self.assertEqual(sum(c[:2] == ['cloudfront', 'create-invalidation'] for c in calls), 1)
         self.assertTrue(all('--if-match' in c for c in calls if c[:2] == ['s3api', 'put-object']))
         self.assertFalse(any(c[0] == 's3' for c in calls))
         import hashlib
@@ -321,9 +313,10 @@ class PublicationBoundaryTests(GitFixture):
         self.change(); self.prepare_run()
         self.apply_run(overrides={'FAKE_S3_FAIL': 'cp'}, success=False)
         self.assertEqual((self.target / 'manifest.json').read_text(), self.baseline)
-        self.assertEqual([s['status'] for s in self.status()], ['failed', 'skipped'])
+        self.assertEqual([s['status'] for s in self.status()], ['failed', 'waiting'])
         self.assertFalse(any(c[0] == 'cloudfront' or c[:2] == ['s3api', 'put-object'] for c in self.calls()))
-        self.assertEqual(self.status()[0]['files'][0]['status'], 'failed')
+        events = [json.loads(line) for line in (self.root / 'plan/events.jsonl').read_text().splitlines()]
+        self.assertTrue(any(e['phase'] == 'file' and e['status'] == 'failed' for e in events))
 
     def test_uploaded_object_verification_failure_blocks_manifest(self):
         self.change(); self.prepare_run()
@@ -349,7 +342,7 @@ class PublicationBoundaryTests(GitFixture):
         self.assertTrue(all(s['status'] == 'completed' for s in self.status()))
         self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
 
-    def test_cdn_failure_retry_refreshes_only_manifest_without_global_repair(self):
+    def test_cdn_failure_requires_evidence_recovery_even_when_manifest_has_no_diff(self):
         self.change()
         for operation in ('create-invalidation', 'wait'):
             with self.subTest(operation=operation):
@@ -358,27 +351,28 @@ class PublicationBoundaryTests(GitFixture):
                 self.apply_run(overrides={'FAKE_S3_FAIL': operation}, success=False)
                 state = self.status()[0]
                 self.assertEqual(state['status'], 'failed')
-                self.assertEqual(state['cdn'], 'failed')
+                self.assertEqual(state['cdn'], 'pending')
                 self.assertTrue(state['manifest_committed'])
-                self.assertEqual(self.status()[1]['status'], 'failed')
-                plan = self.prepare_run()
-                self.assertEqual([s['operation'] for s in plan['steps']], ['FINAL_SYNC'])
+                evidence = self.root / 'plan/batches/001/status.json'
+                pending = evidence.read_bytes()
+                result = self.cli('--prepare', str(self.plan_file), '--after', self.git('rev-parse', 'HEAD'), success=False)
+                self.assertIn('pending postprocessing', result.stderr)
+                self.assertEqual(evidence.read_bytes(), pending)
                 start = len(self.calls())
-                self.apply_run()
-                self.assertEqual(self.status()[0]['cdn'], 'completed')
+                self.cli('--recover-postprocess', str(self.root / 'plan'))
+                self.assertEqual(json.loads(evidence.read_text())['cdn_pending'], [])
                 retry = self.calls()[start:]
                 invalidations = [c for c in retry if c[:2] == ['cloudfront', 'create-invalidation']]
                 self.assertEqual([c[c.index('--paths') + 1:] for c in invalidations],
-                                 [['/cases/manifest.json']])
-                self.assertFalse(any(c[0] == 's3' for c in retry))
+                                 [['/cases/manifest.json', '/cases/a-case/*']])
+                self.assertFalse(any(c[0] == 's3' or c[:2] == ['s3api', 'put-object'] for c in retry))
 
-    def test_final_sync_failure_restarts_with_only_final_sync(self):
+    def test_last_resource_batch_merges_final_sync_without_second_put(self):
         self.change(); self.prepare_run()
-        self.apply_run(overrides={'FAKE_S3_FAIL_PUT_NUMBER': '2'}, success=False)
-        self.assertEqual([s['status'] for s in self.status()], ['completed', 'failed'])
-        plan = self.prepare_run()
-        self.assertEqual([s['operation'] for s in plan['steps']], ['FINAL_SYNC'])
-        self.apply_run()
+        self.apply_run(overrides={'FAKE_S3_FAIL_PUT_NUMBER': '2'})
+        self.assertEqual([s['status'] for s in self.status()], ['completed', 'completed'])
+        self.assertEqual(sum(c[:2] == ['s3api', 'put-object'] for c in self.calls()), 1)
+        self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
 
     def test_changed_baseline_stops_before_any_resource_write(self):
         self.change(); self.prepare_run()
@@ -408,18 +402,17 @@ class PublicationBoundaryTests(GitFixture):
             self.assertEqual((folder / 'manifest.json').read_bytes(), step['manifest'].encode())
             self.assertEqual(json.loads((folder / 'files.json').read_text()), step['files'])
         events = [json.loads(line) for line in (self.root / 'plan/events.jsonl').read_text().splitlines()]
-        for step in plan['steps']:
+        for step in plan['tasks']:
             phases = [(e['phase'], e['status']) for e in events if e['step'] == step['id']]
-            self.assertLess(phases.index(('manifest', 'completed')), phases.index(('cdn', 'uploading')))
-            self.assertEqual(phases[-1], ('step', 'completed'))
+            self.assertLess(phases.index(('manifest', 'completed')), phases.index(('postprocess', 'running')))
+            self.assertEqual(phases[-1], ('postprocess', 'completed'))
 
-    def test_changed_case_invalidates_resources_and_final_sync_only_manifest(self):
+    def test_changed_case_final_batch_invalidates_resources_and_manifest_once(self):
         self.change(); self.prepare_run(); self.apply_run()
         invalidations = [c for c in self.calls() if c[:2] == ['cloudfront', 'create-invalidation']]
         self.assertEqual(invalidations[0][invalidations[0].index('--paths') + 1:],
                          ['/cases/manifest.json', '/cases/a-case/*'])
-        self.assertEqual(len(invalidations), 2)
-        self.assertEqual(invalidations[-1][invalidations[-1].index('--paths') + 1:], ['/cases/manifest.json'])
+        self.assertEqual(len(invalidations), 1)
 
     def test_acknowledged_put_with_failed_readback_records_commit(self):
         self.change(); self.prepare_run()
@@ -465,10 +458,10 @@ class PublicationBoundaryTests(GitFixture):
         self.assertFalse(any(c[0] == 's3' for c in calls))
         invalidations = [c for c in calls if c[:2] == ['cloudfront', 'create-invalidation']]
         self.assertEqual([c[c.index('--paths') + 1:] for c in invalidations],
-                         [['/cases/manifest.json'], ['/cases/manifest.json']])
+                         [['/cases/manifest.json']])
         self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())
 
-    def test_each_case_finishes_upload_manifest_and_cdn_before_the_next_case(self):
+    def test_two_cases_finish_before_one_manifest_and_cdn_batch(self):
         second = self.add_case('B Case', 'b-case')
         self.write_manifest(); self.commit()
         (self.target / 'manifest.json').write_text(json.dumps(self.entries))
@@ -481,11 +474,9 @@ class PublicationBoundaryTests(GitFixture):
             ('s3', 'cp'), ('s3api', 'put-object'),
             ('cloudfront', 'create-invalidation'), ('cloudfront', 'wait'))]
         checkpoint = [('s3api', 'put-object'), ('cloudfront', 'create-invalidation'), ('cloudfront', 'wait')]
-        self.assertEqual(operations, ([('s3', 'cp')] + checkpoint) * 2 + checkpoint)
+        self.assertEqual(operations, [('s3', 'cp')] * 2 + checkpoint)
         invalidations = [c for c in calls if c[:2] == ['cloudfront', 'create-invalidation']]
         self.assertEqual([c[c.index('--paths') + 1:] for c in invalidations], [
-            ['/cases/manifest.json', '/cases/a-case/*'],
-            ['/cases/manifest.json', '/cases/b-case/*'],
-            ['/cases/manifest.json'],
+            ['/cases/manifest.json', '/cases/a-case/*', '/cases/b-case/*'],
         ])
         self.assertEqual((self.target / 'manifest.json').read_bytes(), (self.root / 'manifest.json').read_bytes())

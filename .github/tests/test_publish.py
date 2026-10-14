@@ -18,10 +18,6 @@ import publish as publisher
 
 class GitFixture(unittest.TestCase):
     def setUp(self):
-        from fake_publish import CommandS3
-        self.enterContext(patch.object(publisher, 'S3', CommandS3))
-        # Existing command-boundary tests assert a serial trace; parallel tests use explicit limits.
-        self.enterContext(patch.dict(os.environ, {'CASE_UPLOAD_WORKERS': '1', 'FILE_UPLOAD_WORKERS': '1'}))
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
@@ -254,7 +250,7 @@ class PublishTests(GitFixture):
             publisher.apply(self.root, plan, Upload())
         self.assertEqual(calls, [])
 
-    def test_upload_failure_stops_before_later_resources_and_manifest(self):
+    def test_upload_failure_stops_manifest_and_drains_started_resources(self):
         self.change(); self.change('introduction'); calls = []
         baseline = self.plan()['baseline']
         class Upload:
@@ -264,8 +260,9 @@ class PublishTests(GitFixture):
                 calls.append(key)
                 raise OSError('upload failed')
         with self.assertRaises(OSError):
-            publisher.apply(self.root, self.ready(self.plan()), Upload(), case_workers=1, file_workers=1)
-        self.assertEqual(calls, ['a-case/A Case.png'])
+            publisher.apply(self.root, self.ready(self.plan()), Upload())
+        self.assertTrue(calls)
+        self.assertTrue(set(calls) <= {'a-case/A Case.png', 'a-case/A Case.md'})
 
     def s3_fixture(self):
         fake = self.root / 'bin'; fake.mkdir()
@@ -274,21 +271,21 @@ class PublishTests(GitFixture):
         aws.chmod(0o755)
         s3 = self.root / 's3'; s3.mkdir()
         env = {**os.environ, 'PATH': str(fake) + os.pathsep + os.environ['PATH'],
-               'FAKE_S3_ROOT': str(s3), 'AWS_TARGET_FOLDER': 's3://bucket/cases',
+               'PYTHONPATH': str(Path(__file__).parent / 'sdk_boundary') + os.pathsep + str(Path(__file__).parent), 'FAKE_S3_ROOT': str(s3), 'AWS_TARGET_FOLDER': 's3://bucket/cases',
                'AWS_DISTRIBUITION_ID': 'test-distribution'}
         return s3, env
 
     def test_s3_get_only_missing_key_returns_none(self):
         s3, env = self.s3_fixture()
         with patch.dict(os.environ, env):
-            store = publisher.S3(env['AWS_TARGET_FOLDER'])
+            store = publisher.S3(env['AWS_TARGET_FOLDER'], client=__import__('fake_sdk').FakeS3Client(env['FAKE_S3_ROOT']))
             self.assertIsNone(store.read_manifest())
             target = s3 / 'bucket/cases/manifest.json'
             target.parent.mkdir(parents=True); target.write_text('[]')
             self.assertEqual(store.read_manifest(), '[]')
             for code in ('AccessDenied', 'NoSuchBucket', '404', 'SlowDown'):
                 with self.subTest(code=code), patch.dict(os.environ, {'FAKE_S3_GET_ERROR': code}):
-                    with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                    with self.assertRaises(__import__("botocore.exceptions", fromlist=["ClientError"]).ClientError):
                         store.read_manifest()
 
     def test_cli_upload_metadata_matches_verified_content(self):
@@ -297,7 +294,7 @@ class PublishTests(GitFixture):
         baseline = s3 / 'bucket/cases/manifest.json'
         baseline.parent.mkdir(parents=True); baseline.write_text(plan['baseline'])
         plan_file = self.root / 'plan.json'; plan_file.write_text(json.dumps(plan))
-        result = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('fake_publish.py')), '--apply-plan', str(plan_file)],
+        result = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'publish.py'), '--apply-plan', str(plan_file)],
                                 cwd=self.root, env=env, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         target = s3 / 'bucket/cases'

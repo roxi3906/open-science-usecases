@@ -46,6 +46,7 @@ The check phase does not download bodies or recompute SHA values. Git declaratio
 Run from the repository root. The checkout must match the commit being checked, and the manifest must have no uncommitted changes:
 
 ```sh
+python3 -m pip install -r .github/scripts/requirements-publication.txt
 CASES_JSON="$(python3 .github/scripts/check_structure.py directories --base <BASE_SHA>)" \
   python3 .github/scripts/check_structure.py manifest
 python3 .github/scripts/check_structure.py declarations --base <BASE_SHA> --after <HEAD_SHA>
@@ -53,3 +54,8 @@ python3 -B -m unittest discover -s .github/tests -v
 ```
 
 PR checks use the range from the merge base to the fixed PR head. New branches may pass `--new-branch-base`; an all-zero base without a new-branch baseline checks every entry. Publication uses `manifest --plan <PLAN_FILE>` to check entries that differ from the S3 baseline. See [PUBLISHING.md](PUBLISHING.md) for safe publication, staging, and failure recovery.
+
+The SDK dependency lock also applies to local publication tests. All AWS tests inject a
+thread-safe fake SDK client; HTTP retry tests bind only to loopback. They do not use
+production credentials, S3, or CloudFront. Publication HEAD checks run after uploads
+and compare size and custom SHA metadata, not a newly computed remote-body digest.

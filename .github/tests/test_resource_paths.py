@@ -109,7 +109,7 @@ class ResourcePathTests(GitFixture):
             publisher.apply(self.root, plan, store)
         for kind in publisher.KINDS:
             self.assertIn('a-case/'+self.entry[kind]['file_name'], store.writes)
-        self.assertEqual(store.clears, ['a-case'])
+        self.assertEqual(store.clears, [])
         self.assertEqual(store.manifest, (self.root / 'manifest.json').read_text())
 
     def test_git_treats_special_resource_names_as_literal_paths(self):
@@ -263,7 +263,7 @@ class ResourcePathTests(GitFixture):
                 plan = publisher.prepare_resources(self.root, plan, store, self.root / 'sources')
                 plan = extract_science.expand_plan(self.root, plan, self.root / 'staging')
                 publisher.apply(self.root, plan, store)
-                self.assertEqual(store.clears, ['a-case'])
+                self.assertEqual(store.clears, [])
                 self.assertIn('a-case/extracted/session.json', store.writes)
                 for kind in publisher.KINDS:
                     self.assertIn('a-case/' + self.entry[kind]['file_name'], store.writes)
